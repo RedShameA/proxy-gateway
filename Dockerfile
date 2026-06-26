@@ -1,5 +1,5 @@
 # --- Frontend ---
-FROM node:24-alpine AS web-build
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web-build
 WORKDIR /src/web
 COPY web/package*.json ./
 RUN npm ci
@@ -7,16 +7,18 @@ COPY web/ ./
 RUN npm run build && mkdir -p /out/dist && cp -a dist/. /out/dist/
 
 # --- Backend ---
-FROM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 ARG VERSION=dev
 ARG VCS_REF=unknown
 ARG VCS_URL=https://github.com/RedShameA/proxy-gateway
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ cmd/
 COPY internal/ internal/
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -tags "with_quic with_wireguard with_grpc with_utls" -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${VCS_REF} -X main.source=${VCS_URL}" -o /out/proxygateway ./cmd/proxygateway
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -tags "with_quic with_wireguard with_grpc with_utls" -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${VCS_REF} -X main.source=${VCS_URL}" -o /out/proxygateway ./cmd/proxygateway
 
 # --- Final image ---
 FROM alpine:3.22
