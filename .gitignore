@@ -1,0 +1,39 @@
+# Local/runtime data
+/data/
+/tmp/
+
+# Downloaded tools and scratch outputs
+/tools/
+/dl-test/
+/.toolchain/
+/local-fixtures/
+/.cache/
+/.vite/
+/.claude/
+/scripts/proxy-availability.sh
+
+# Build outputs
+/bin/
+/dist/
+/coverage/
+/proxygateway
+*.test
+*.out
+
+# Go
+/vendor/
+
+# Web frontend
+/web/node_modules/
+/web/dist/
+/web/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local editor/env files
+.env
+.env.*
+!.env.example
+.DS_Store

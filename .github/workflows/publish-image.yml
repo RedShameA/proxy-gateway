@@ -1,0 +1,162 @@
+name: Publish image
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        id: release
+        run: |
+          version="${GITHUB_REF_NAME:-}"
+          if [ -z "$version" ] && [ -n "${GITHUB_REF:-}" ]; then
+            version="${GITHUB_REF#refs/tags/}"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Release tag must match vMAJOR.MINOR.PATCH, got: $version" >&2
+            exit 1
+          fi
+
+          git fetch --force origin main:refs/remotes/origin/main
+          revision="$(git rev-parse HEAD)"
+          if ! git merge-base --is-ancestor "$revision" origin/main; then
+            echo "Release tag $version points to $revision, which is not in origin/main history." >&2
+            exit 1
+          fi
+
+          source="${GITHUB_SERVER_URL%/}/${GITHUB_REPOSITORY}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare image target
+        id: target
+        env:
+          NEXUS_REGISTRY_SECRET: ${{ secrets.NEXUS_REGISTRY }}
+          NEXUS_REGISTRY_VAR: ${{ vars.NEXUS_REGISTRY }}
+          NEXUS_IMAGE_SECRET: ${{ secrets.NEXUS_IMAGE }}
+          NEXUS_IMAGE_VAR: ${{ vars.NEXUS_IMAGE }}
+        run: |
+          if [ "${GITHUB_SERVER_URL:-}" = "https://github.com" ]; then
+            owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+            registry="ghcr.io"
+            image="$registry/$owner/proxy-gateway"
+            target="github"
+          else
+            registry_value="${NEXUS_REGISTRY_SECRET:-${NEXUS_REGISTRY_VAR:-}}"
+            image_value="${NEXUS_IMAGE_SECRET:-${NEXUS_IMAGE_VAR:-}}"
+            registry="$(printf '%s' "$registry_value" | sed 's#/*$##')"
+            image_path="$(printf '%s' "$image_value" | sed 's#^/*##; s#/*$##')"
+            if [ -z "$registry" ] || [ -z "$image_path" ]; then
+              echo "NEXUS_REGISTRY and NEXUS_IMAGE must be configured in secrets or variables for non-GitHub runners." >&2
+              exit 1
+            fi
+            image="$registry/$image_path"
+            target="gitea"
+          fi
+
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: web
+        run: npm test
+
+      - name: Run frontend typecheck
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to image registry
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
+          REGISTRY: ${{ steps.target.outputs.registry }}
+          GITHUB_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXUS_USERNAME_SECRET: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_USERNAME_VAR: ${{ vars.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          if [ "$TARGET" = "github" ]; then
+            username="$GITHUB_USERNAME"
+            password="$GHCR_TOKEN"
+          else
+            username="${NEXUS_USERNAME_SECRET:-${NEXUS_USERNAME_VAR:-}}"
+            password="${NEXUS_PASSWORD:-}"
+          fi
+
+          if [ -z "$username" ] || [ -z "$password" ]; then
+            echo "Registry credentials are not configured for target: $TARGET" >&2
+            exit 1
+          fi
+
+          printf '%s' "$password" | docker login "$REGISTRY" --username "$username" --password-stdin
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.target.outputs.image }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.release.outputs.version }}
+            type=raw,value=sha-${{ steps.release.outputs.revision }}
+          labels: |
+            org.opencontainers.image.source=${{ steps.release.outputs.source }}
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.release.outputs.revision }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+            VCS_REF=${{ steps.release.outputs.revision }}
+            VCS_URL=${{ steps.release.outputs.source }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

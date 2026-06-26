@@ -1,0 +1,295 @@
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; min-height: 100%; }
+body { background: var(--semi-color-bg-0); color: var(--semi-color-text-0); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+
+/* Desktop/tablet app shell: sidebar and content are independent scroll regions. */
+.app-layout {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-sider {
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: var(--semi-color-bg-1);
+}
+
+.app-sider .semi-navigation {
+  height: 100%;
+  max-height: 100%;
+}
+
+.app-sider .semi-navigation-inner {
+  min-height: 0;
+}
+
+.app-sider .semi-navigation-header-list-outer {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: auto;
+  min-height: 0;
+}
+
+.app-sider .semi-navigation-list-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.app-brand-logo {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--semi-color-primary);
+  line-height: 1;
+}
+
+.app-brand-logo .semi-icon,
+.app-brand-logo svg {
+  display: block;
+}
+
+.app-brand-logo .semi-icon {
+  font-size: 20px;
+}
+
+.app-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.app-brand-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px 0 7px;
+  border: 1px solid rgba(var(--semi-blue-5), 0.26);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.38)),
+    rgba(var(--semi-blue-0), 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.64),
+    0 1px 2px rgba(var(--semi-blue-7), 0.08);
+  color: rgb(var(--semi-blue-6));
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.035em;
+  line-height: 1;
+  text-transform: lowercase;
+  transform: translateY(0.5px);
+}
+
+.app-version-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(var(--semi-blue-5), 0.12);
+}
+
+.app-content {
+  height: 100vh;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--semi-color-bg-0);
+}
+
+/* Mobile: hide sidebar */
+@media (max-width: 767px) {
+  .app-sider { display: none !important; }
+  .app-content { padding-bottom: 64px !important; }
+}
+
+@media (max-width: 767px) {
+  .adaptive-panel-mobile.semi-modal {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
+
+  .adaptive-panel-mobile .semi-modal-wrap,
+  .adaptive-panel-mobile .semi-modal {
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+  }
+
+  .adaptive-panel-mobile .semi-modal-content {
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .adaptive-panel-mobile .semi-modal-body,
+  .adaptive-panel-mobile .semi-modal-body-wrapper {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .adaptive-panel-mobile .semi-modal-header,
+  .adaptive-panel-mobile .semi-modal-footer {
+    flex: 0 0 auto;
+  }
+}
+
+/* Bottom tab bar */
+.bottom-tab-bar {
+  position: fixed; bottom: 0; left: 0; right: 0; height: 56px;
+  background: var(--semi-color-bg-0); border-top: 1px solid var(--semi-color-border);
+  display: flex; align-items: center; justify-content: space-around; z-index: 100;
+}
+.bottom-tab-item { display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; padding: 4px 8px; min-width: 48px; }
+.bottom-tab-item .semi-icon { font-size: 20px; }
+.bottom-tab-item.active .semi-icon { color: var(--semi-color-primary); }
+@media (min-width: 768px) { .bottom-tab-bar { display: none; } }
+
+/* Auth shell */
+.auth-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.auth-panel { width: min(420px, 100%); padding: 28px; background: var(--semi-color-bg-2); border: 1px solid var(--semi-color-border); border-radius: 8px; }
+
+/* App content */
+.app-content { padding: 20px 24px; }
+@media (max-width: 767px) { .app-content { padding: 12px; } }
+
+/* Page scroll container */
+.page-scroll { max-width: 1200px; margin: 0 auto; }
+
+/* Nodes table */
+.nodes-table .semi-table-tbody > .semi-table-row > .semi-table-row-cell,
+.nodes-table .semi-table-thead > .semi-table-row > .semi-table-row-head {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.nodes-table .semi-table-row-cell {
+  vertical-align: middle;
+}
+
+.nodes-table .semi-typography {
+  max-width: 100%;
+}
+
+/* Overview paired cards */
+.semi-row.overview-paired-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.semi-col.overview-paired-col {
+  display: flex;
+}
+
+.overview-paired-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-paired-card > .semi-card-body {
+  flex: 1 1 auto;
+}
+
+.overview-failure-card,
+.overview-failure-content {
+  min-width: 0;
+}
+
+.overview-failure-card {
+  width: 100%;
+}
+
+.overview-failure-content {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+}
+
+.overview-failure-header,
+.overview-failure-error-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.overview-failure-header {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.overview-failure-error-row {
+  gap: 8px;
+}
+
+.overview-failure-target,
+.overview-failure-error,
+.overview-failure-meta {
+  min-width: 0;
+}
+
+.overview-failure-target,
+.overview-failure-error {
+  flex: 1 1 auto;
+}
+
+.overview-failure-time,
+.overview-failure-stage {
+  flex: 0 0 auto;
+}
+
+.overview-failure-meta {
+  display: block;
+}
+
+@media (max-width: 767px) {
+  .semi-col.overview-paired-col {
+    display: block;
+  }
+
+  .overview-paired-card {
+    display: block;
+  }
+
+  .overview-failure-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .overview-failure-time {
+    align-self: flex-start;
+  }
+}
+
+/* Loading spinner centering */
+.page-loading { display: flex; justify-content: center; align-items: center; min-height: 200px; }
