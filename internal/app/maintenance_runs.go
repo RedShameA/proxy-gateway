@@ -12,6 +12,8 @@ import (
 	appevaluations "proxygateway/internal/application/evaluations"
 	maintenanceapp "proxygateway/internal/application/maintenance"
 	appsubscriptions "proxygateway/internal/application/subscriptions"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -140,9 +142,27 @@ func (g *Gateway) createMaintenanceRun(runType, triggerSource, targetID, targetL
 		Detail:        detail,
 	})
 	if err != nil {
+		g.log().Warn("create maintenance run failed",
+			zap.String("run_type", runType),
+			zap.String("trigger_source", triggerSource),
+			zap.String("target_id", targetID),
+			zap.Error(err),
+		)
 		return maintenanceRunRecord{}, err
 	}
-	return recordFromApplicationRun(run)
+	record, err := recordFromApplicationRun(run)
+	if err != nil {
+		g.log().Warn("map maintenance run failed", zap.String("run_type", runType), zap.Error(err))
+		return maintenanceRunRecord{}, err
+	}
+	g.log().Debug("maintenance run created",
+		zap.String("run_id", record.ID),
+		zap.String("run_type", record.RunType),
+		zap.String("trigger_source", record.TriggerSource),
+		zap.String("target_id", record.TargetID),
+		zap.Int("total_count", record.TotalCount),
+	)
+	return record, nil
 }
 
 func (g *Gateway) enqueueProfileEvaluationRun(profileID, targetLabel, triggerSource string, configVersion int64, forceSwitch bool) (string, error) {
@@ -206,18 +226,51 @@ func (g *Gateway) enqueueSubscriptionRefreshRun(subscriptionID, targetLabel, tri
 }
 
 func (g *Gateway) startMaintenanceRun(id string) error {
-	return g.maintenanceRunService().Start(context.Background(), id)
+	if err := g.maintenanceRunService().Start(context.Background(), id); err != nil {
+		g.log().Warn("start maintenance run failed", zap.String("run_id", id), zap.Error(err))
+		return err
+	}
+	g.log().Info("maintenance run started", zap.String("run_id", id))
+	return nil
 }
 
 func (g *Gateway) finishMaintenanceRun(id, result, reasonCode string, finishedCount int, detail map[string]any, lastError string) error {
-	return g.maintenanceRunService().Finish(context.Background(), maintenanceapp.FinishCommand{
+	if err := g.maintenanceRunService().Finish(context.Background(), maintenanceapp.FinishCommand{
 		ID:            id,
 		Result:        result,
 		ReasonCode:    reasonCode,
 		FinishedCount: finishedCount,
 		Detail:        detail,
 		LastError:     lastError,
-	})
+	}); err != nil {
+		g.log().Warn("finish maintenance run failed",
+			zap.String("run_id", id),
+			zap.String("result", result),
+			zap.String("reason_code", reasonCode),
+			zap.Error(err),
+		)
+		return err
+	}
+	fields := []zap.Field{
+		zap.String("run_id", id),
+		zap.String("result", result),
+		zap.String("reason_code", reasonCode),
+		zap.Int("finished_count", finishedCount),
+	}
+	if lastError != "" {
+		fields = append(fields, zap.String("last_error", lastError))
+	}
+	switch result {
+	case maintenanceRunResultFailure:
+		g.log().Warn("maintenance run finished with failure", fields...)
+	case maintenanceRunResultCancelled:
+		g.log().Warn("maintenance run cancelled", fields...)
+	case maintenanceRunResultSkipped:
+		g.log().Debug("maintenance run skipped", fields...)
+	default:
+		g.log().Info("maintenance run finished", fields...)
+	}
+	return nil
 }
 
 func (g *Gateway) setMaintenanceRunTotal(id string, totalCount int) error {
@@ -354,6 +407,7 @@ func (g *Gateway) claimQueuedMaintenanceRunsOfType(runType string, limit int) []
 func (g *Gateway) claimNextQueuedMaintenanceRun(runType string) (maintenanceRunRecord, bool) {
 	run, ok, err := g.maintenanceRunService().ClaimNext(context.Background(), runType)
 	if err != nil {
+		g.log().Warn("claim maintenance run failed", zap.String("run_type", runType), zap.Error(err))
 		return maintenanceRunRecord{}, false
 	}
 	if !ok {
@@ -361,6 +415,7 @@ func (g *Gateway) claimNextQueuedMaintenanceRun(runType string) (maintenanceRunR
 	}
 	record, err := recordFromApplicationRun(run)
 	if err != nil {
+		g.log().Warn("map claimed maintenance run failed", zap.String("run_type", runType), zap.Error(err))
 		return maintenanceRunRecord{}, false
 	}
 	return record, true
@@ -369,8 +424,16 @@ func (g *Gateway) claimNextQueuedMaintenanceRun(runType string) (maintenanceRunR
 func (g *Gateway) runMaintenanceRun(runID string) error {
 	run, err := g.loadMaintenanceRun(runID)
 	if err != nil {
+		g.log().Warn("load maintenance run failed", zap.String("run_id", runID), zap.Error(err))
 		return err
 	}
+	g.log().Info("maintenance run executing",
+		zap.String("run_id", run.ID),
+		zap.String("run_type", run.RunType),
+		zap.String("trigger_source", run.TriggerSource),
+		zap.String("target_id", run.TargetID),
+		zap.Int("total_count", run.TotalCount),
+	)
 	switch run.RunType {
 	case maintenanceTaskNodeObservation:
 		return g.runNodeObservationMaintenanceRun(run.ID)
@@ -676,7 +739,7 @@ func (g *Gateway) runSubscriptionRefreshMaintenanceRun(runID string) error {
 		g.enqueueObservationForSubscriptionNodes(sub.ID)
 	}
 	g.enqueueStickyProfileEvaluationsForRemovedNodes(toStickyProfileEvaluationRefs(outcome.StickyProfilesToEvaluate))
-	return g.finishMaintenanceRun(run.ID, maintenanceRunResultSuccess, maintenanceRunReasonCompleted, 1, detail, "")
+	return g.finishMaintenanceRun(run.ID, outcome.Result, outcome.ReasonCode, 1, detail, "")
 }
 
 func toSubscriptionRefreshImportResult(result subscriptionImportResult) appsubscriptions.RefreshImportResult {
@@ -803,11 +866,6 @@ func (g *Gateway) runProfileEvaluationMaintenanceRun(runID string) error {
 		} else {
 			result = maintenanceRunResultFailure
 			reasonCode = firstNonEmpty(cfg.SwitchReason, "evaluation_failed")
-		}
-	} else if failureCount > 0 {
-		result = maintenanceRunResultWarning
-		if reasonCode == maintenanceRunReasonCompleted {
-			reasonCode = "partial_failure"
 		}
 	}
 	return g.finishMaintenanceRun(run.ID, result, reasonCode, candidateCount, detail, lastError)

@@ -1,10 +1,12 @@
 package main
 
 import (
-	"log"
 	"net"
+	"os"
 
 	"proxygateway/internal/app"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -20,6 +22,16 @@ var (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
+	logger, err := app.NewProcessLoggerFromEnv()
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = logger.Sync() }()
+
 	app.SetBuildInfo(app.BuildInfo{
 		Version:  version,
 		Revision: revision,
@@ -27,18 +39,26 @@ func main() {
 		License:  "AGPL-3.0-or-later",
 	})
 
-	gateway, err := app.New(defaultDataDir)
+	gateway, err := app.New(defaultDataDir, app.WithLogger(logger))
 	if err != nil {
-		log.Fatalf("open gateway: %v", err)
+		logger.Error("open gateway failed", zap.String("data_dir", defaultDataDir), zap.Error(err))
+		return 1
 	}
-	defer gateway.Close()
+	defer func() {
+		if err := gateway.Close(); err != nil {
+			logger.Error("close gateway failed", zap.Error(err))
+		}
+	}()
 
 	ln, err := net.Listen("tcp", defaultListenAddr)
 	if err != nil {
-		log.Fatalf("listen %s: %v", defaultListenAddr, err)
+		logger.Error("listen failed", zap.String("addr", defaultListenAddr), zap.Error(err))
+		return 1
 	}
-	log.Printf("proxy gateway listening on %s", ln.Addr())
+	logger.Info("proxy gateway listening", zap.String("addr", ln.Addr().String()))
 	if err := gateway.Serve(ln); err != nil {
-		log.Fatalf("serve: %v", err)
+		logger.Error("serve failed", zap.Error(err))
+		return 1
 	}
+	return 0
 }

@@ -11,6 +11,8 @@ import (
 
 	databaseinfra "proxygateway/internal/infrastructure/database"
 	geoipinfra "proxygateway/internal/infrastructure/geoip"
+
+	"go.uber.org/zap"
 )
 
 type Gateway struct {
@@ -25,6 +27,7 @@ type Gateway struct {
 	ctx            context.Context
 	cancel         context.CancelFunc
 	closeOnce      sync.Once
+	logger         *zap.Logger
 }
 
 type nodeProtocolEngine interface {

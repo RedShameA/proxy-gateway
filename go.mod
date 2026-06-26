@@ -9,6 +9,7 @@ require (
 	github.com/sagernet/sing-box v1.12.21
 	github.com/sagernet/sing-shadowsocks v0.2.8
 	github.com/sagernet/sing-vmess v0.2.7
+	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.53.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.52.0
@@ -107,7 +108,6 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/blake3 v0.2.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
 	go4.org/mem v0.0.0-20240501181205-ae6ca9944745 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect

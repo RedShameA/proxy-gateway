@@ -16,7 +16,7 @@ func TestBuildRefreshSuccessOutcomeSplitsIgnoredAndSkippedSummaries(t *testing.T
 		},
 	})
 
-	if outcome.SubscriptionID != "sub-1" || outcome.ImportedCount != 3 || !outcome.EnqueueObservation {
+	if outcome.SubscriptionID != "sub-1" || outcome.Result != "success" || outcome.ReasonCode != "completed" || outcome.ImportedCount != 3 || !outcome.EnqueueObservation {
 		t.Fatalf("outcome base fields = %#v", outcome)
 	}
 	if outcome.IgnoredCount != 3 || outcome.SkippedCount != 4 {
@@ -27,5 +27,22 @@ func TestBuildRefreshSuccessOutcomeSplitsIgnoredAndSkippedSummaries(t *testing.T
 	}
 	if len(outcome.StickyProfilesToEvaluate) != 1 || outcome.StickyProfilesToEvaluate[0].ID != "profile-1" {
 		t.Fatalf("sticky refs = %#v", outcome.StickyProfilesToEvaluate)
+	}
+}
+
+func TestBuildRefreshSuccessOutcomeWarnsWhenNoNodesImported(t *testing.T) {
+	outcome := BuildRefreshSuccessOutcome(RefreshImportResult{
+		SubscriptionID: "sub-empty",
+		ImportedNodes:  0,
+		SkippedEntrySummary: []SkippedEntrySummary{
+			{Reason: "malformed_entry", Count: 2},
+		},
+	})
+
+	if outcome.Result != "warning" || outcome.ReasonCode != "no_importable_nodes" {
+		t.Fatalf("outcome status = %#v, want warning no_importable_nodes", outcome)
+	}
+	if outcome.ImportedCount != 0 || outcome.SkippedCount != 2 {
+		t.Fatalf("outcome counts = %#v, want imported 0 skipped 2", outcome)
 	}
 }

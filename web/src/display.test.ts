@@ -102,6 +102,7 @@ describe('run labels', () => {
     expect(runTriggerSourceLabel('access_profile_change')).toBe('策略配置变更');
     expect(runTriggerSourceLabel('current_node_observed')).toBe('原节点移除后重评');
     expect(runReasonLabel('expired_after_restart')).toBe('重启后过期取消');
+    expect(runReasonLabel('no_importable_nodes')).toBe('无可导入节点');
   });
 });
 

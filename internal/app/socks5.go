@@ -6,6 +6,8 @@ import (
 	"net"
 	"strconv"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const socks5HandshakeTimeout = 10 * time.Second
@@ -16,14 +18,20 @@ func (g *Gateway) handleSOCKS5Conn(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 	version, err := reader.ReadByte()
 	if err != nil || version != 0x05 {
+		g.log().Debug("socks5 handshake rejected",
+			zap.String("remote_addr", conn.RemoteAddr().String()),
+			zap.Error(err),
+		)
 		return
 	}
 	methodCount, err := reader.ReadByte()
 	if err != nil {
+		g.log().Debug("socks5 method count read failed", zap.String("remote_addr", conn.RemoteAddr().String()), zap.Error(err))
 		return
 	}
 	methods := make([]byte, int(methodCount))
 	if _, err := io.ReadFull(reader, methods); err != nil {
+		g.log().Debug("socks5 methods read failed", zap.String("remote_addr", conn.RemoteAddr().String()), zap.Error(err))
 		return
 	}
 	authSupported := false
@@ -34,27 +42,40 @@ func (g *Gateway) handleSOCKS5Conn(conn net.Conn) {
 		}
 	}
 	if !authSupported {
+		g.log().Warn("socks5 authentication method unsupported", zap.String("remote_addr", conn.RemoteAddr().String()))
 		_, _ = conn.Write([]byte{0x05, 0xff})
 		return
 	}
 	if _, err := conn.Write([]byte{0x05, 0x02}); err != nil {
+		g.log().Debug("socks5 method selection write failed", zap.String("remote_addr", conn.RemoteAddr().String()), zap.Error(err))
 		return
 	}
 	username, password, ok := readSOCKS5UsernamePassword(reader, conn)
 	if !ok {
+		g.log().Warn("socks5 username password auth read failed", zap.String("remote_addr", conn.RemoteAddr().String()))
 		return
 	}
 	credential, ok := g.proxyCredentialForUsernamePassword(conn, username, password)
 	if !ok {
+		g.log().Warn("socks5 authentication failed",
+			zap.String("remote_addr", conn.RemoteAddr().String()),
+			zap.String("profile_identifier", username),
+		)
 		return
 	}
 	path, err := g.proxyPathForCredential(credential)
 	if err != nil {
+		g.log().Warn("socks5 proxy path selection failed",
+			zap.String("remote_addr", conn.RemoteAddr().String()),
+			zap.String("profile_id", credential.ProfileID),
+			zap.Error(err),
+		)
 		writeSOCKS5Failure(conn, 0x01)
 		return
 	}
 	target, ok := readSOCKS5ConnectTarget(reader, conn)
 	if !ok {
+		g.log().Warn("socks5 target read failed", zap.String("remote_addr", conn.RemoteAddr().String()))
 		return
 	}
 	_ = conn.SetDeadline(time.Time{})

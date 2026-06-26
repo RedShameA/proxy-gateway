@@ -43,6 +43,25 @@ For production use, mount `/data` on a persistent volume.
 
 Each release publishes `latest`, `vMAJOR.MINOR.PATCH`, and `sha-<commit>` tags. For production use, prefer a version tag such as `v0.1.0`; use the `sha-<commit>` tag when you need to pin an image to an exact source revision. Images include `org.opencontainers.image.version` and `org.opencontainers.image.revision` labels, and the running service also returns the version and revision from `/api/system/setup-status` for tracing back to the corresponding public source commit.
 
+## Logs
+
+Backend process logs are written to stdout/stderr, so they are available from `docker logs` or the binary's console. The default log level is `info`; set `PROXYGATEWAY_LOG_LEVEL` to `debug`, `info`, `warn`, or `error` to change it:
+
+```bash
+docker run -d \
+  --name proxy-gateway \
+  -p 8080:8080 \
+  -v proxy-gateway-data:/data \
+  -e PROXYGATEWAY_LOG_LEVEL=debug \
+  ghcr.io/redshamea/proxy-gateway:latest
+```
+
+For a local binary:
+
+```bash
+PROXYGATEWAY_LOG_LEVEL=warn ./proxygateway
+```
+
 ## Documentation
 
 - [Glossary](docs/glossary.md)

@@ -26,6 +26,8 @@ type RefreshImportResult struct {
 
 type RefreshSuccessOutcome struct {
 	SubscriptionID           string
+	Result                   string
+	ReasonCode               string
 	ImportedCount            int
 	IgnoredCount             int
 	SkippedCount             int
@@ -43,8 +45,16 @@ type RefreshFailureOutcome struct {
 
 func BuildRefreshSuccessOutcome(result RefreshImportResult) RefreshSuccessOutcome {
 	ignoredCount, ignoredSummary, skippedCount, skippedSummary := splitSkippedSummaries(result.SkippedEntrySummary)
+	runResult := "success"
+	reasonCode := "completed"
+	if result.ImportedNodes == 0 {
+		runResult = "warning"
+		reasonCode = "no_importable_nodes"
+	}
 	return RefreshSuccessOutcome{
 		SubscriptionID:           result.SubscriptionID,
+		Result:                   runResult,
+		ReasonCode:               reasonCode,
 		ImportedCount:            result.ImportedNodes,
 		IgnoredCount:             ignoredCount,
 		SkippedCount:             skippedCount,

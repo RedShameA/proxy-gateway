@@ -3,6 +3,12 @@ package app
 import (
 	"testing"
 	"time"
+
+	sqliteinfra "proxygateway/internal/infrastructure/sqlite"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestAsyncRequestLogWriterFlushesQueuedEvents(t *testing.T) {
@@ -44,10 +50,12 @@ func TestAsyncRequestLogWriterFlushesQueuedEvents(t *testing.T) {
 }
 
 func TestRequestLogWriterDropsWhenQueueIsFull(t *testing.T) {
+	core, observed := observer.New(zapcore.WarnLevel)
 	w := &requestLogWriter{
 		events: make(chan requestLogEvent),
 		stop:   make(chan struct{}),
 		done:   make(chan struct{}),
+		logger: zap.New(core),
 	}
 
 	if w.enqueue(requestLogEvent{kind: requestLogEventStart, id: "log_1"}) {
@@ -55,5 +63,40 @@ func TestRequestLogWriterDropsWhenQueueIsFull(t *testing.T) {
 	}
 	if got := w.droppedCount(); got != 1 {
 		t.Fatalf("droppedCount = %d, want 1", got)
+	}
+	if observed.Len() != 1 {
+		t.Fatalf("observed log count = %d, want 1", observed.Len())
+	}
+	if got := observed.All()[0].Message; got != "request log event dropped" {
+		t.Fatalf("observed message = %q, want request log event dropped", got)
+	}
+}
+
+func TestRequestLogWriterLogsDatabaseWriteError(t *testing.T) {
+	core, observed := observer.New(zapcore.ErrorLevel)
+	db, err := sqliteinfra.Open(sqliteinfra.DefaultPath(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	w := &requestLogWriter{
+		db:     db,
+		logger: zap.New(core),
+	}
+
+	w.write(requestLogEvent{kind: requestLogEventStart, id: "log_write_error", targetHost: "example.test:443"})
+
+	if observed.Len() != 1 {
+		t.Fatalf("observed log count = %d, want 1", observed.Len())
+	}
+	entry := observed.All()[0]
+	if entry.Message != "write request log event failed" {
+		t.Fatalf("observed message = %q, want write request log event failed", entry.Message)
+	}
+	fields := entry.ContextMap()
+	if fields["event_kind"] != "start" || fields["log_id"] != "log_write_error" {
+		t.Fatalf("observed fields = %#v, want event_kind=start and log_id=log_write_error", fields)
 	}
 }

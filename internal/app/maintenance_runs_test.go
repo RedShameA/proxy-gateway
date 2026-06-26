@@ -255,3 +255,72 @@ proxy-groups:
 		t.Fatalf("subscription refresh should create one aggregate observation run, got %d in %#v", subscriptionTriggered, observationRuns.Items)
 	}
 }
+
+func TestSubscriptionRefreshRunWarnsWhenNoNodesImported(t *testing.T) {
+	t.Parallel()
+
+	content := `
+proxies:
+  - name: initial-http
+    type: http
+    server: 127.0.0.1
+    port: 18084
+`
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(content))
+	}))
+	t.Cleanup(remote.Close)
+
+	gw := app.NewForTest(t)
+	srv := httptest.NewServer(gw.Handler())
+	t.Cleanup(srv.Close)
+	adminToken := setupAdmin(t, srv.URL)
+
+	createResp := postJSON(t, srv.URL+"/api/subscriptions", adminToken, map[string]any{
+		"name":        "empty-refresh-subscription",
+		"source_type": "remote",
+		"url":         remote.URL,
+	})
+	var created struct {
+		ID string `json:"id"`
+	}
+	decodeOK(t, createResp, &created)
+
+	content = `
+proxies:
+  - name: missing-server
+    type: http
+    port: 18085
+`
+
+	var refreshed struct {
+		ImportedNodes  int `json:"imported_nodes"`
+		SkippedEntries int `json:"skipped_entries"`
+	}
+	decodeOK(t, postJSON(t, srv.URL+"/api/subscriptions/"+created.ID+"/refresh", adminToken, map[string]any{}), &refreshed)
+	if refreshed.ImportedNodes != 0 || refreshed.SkippedEntries != 1 {
+		t.Fatalf("refresh result = %#v, want 0 imported and 1 skipped", refreshed)
+	}
+
+	var runs struct {
+		Items []struct {
+			RunType       string         `json:"run_type"`
+			TriggerSource string         `json:"trigger_source"`
+			State         string         `json:"state"`
+			Result        string         `json:"result"`
+			ReasonCode    string         `json:"reason_code"`
+			Detail        map[string]any `json:"detail"`
+		} `json:"items"`
+	}
+	getJSON(t, srv.URL+"/api/maintenance/runs?run_type=subscription_refresh&target_id="+created.ID, adminToken, &runs)
+	if len(runs.Items) != 1 {
+		t.Fatalf("subscription refresh runs = %d, want 1: %#v", len(runs.Items), runs.Items)
+	}
+	run := runs.Items[0]
+	if run.RunType != "subscription_refresh" || run.TriggerSource != "manual" || run.State != "finished" || run.Result != "warning" || run.ReasonCode != "no_importable_nodes" {
+		t.Fatalf("subscription refresh run identity/status = %#v, want finished manual warning no_importable_nodes", run)
+	}
+	if run.Detail["imported_count"] != float64(0) || run.Detail["skipped_count"] != float64(1) {
+		t.Fatalf("subscription refresh detail = %#v, want imported 0 skipped 1", run.Detail)
+	}
+}

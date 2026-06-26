@@ -81,6 +81,7 @@ export function runReasonLabel(reason: string): string {
     fetch_failed: '拉取失败',
     parse_failed: '解析失败',
     import_failed: '导入失败',
+    no_importable_nodes: '无可导入节点',
     geoip_service_unavailable: 'GeoIP 服务不可用',
     geoip_update_failed: 'GeoIP 更新失败',
     request_log_cleanup_failed: '请求日志清理失败',

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bufio"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -336,6 +337,46 @@ func TestProfileEvaluationRunExecutesFastestProfile(t *testing.T) {
 	detail := run.detail()
 	if detail["candidate_count"] != float64(1) || detail["success_count"] != float64(1) || detail["selected_node_id"] != "node_fastest" {
 		t.Fatalf("profile evaluation detail = %#v, want candidate/success selected node", detail)
+	}
+}
+
+func TestProfileEvaluationRunSucceedsWithUsableCandidateDespiteFailures(t *testing.T) {
+	t.Parallel()
+
+	g := NewForTest(t)
+	g.protocolEngine = mixedProfileEvaluationEngine{failingNodeID: "node_bad"}
+	insertMaintenanceRunTestNode(t, g, "node_ok", "ok-node")
+	insertMaintenanceRunTestNode(t, g, "node_bad", "bad-node")
+	cfg := defaultAccessProfileConfig("profile_partial_candidates")
+	cfg.Name = "partial candidates"
+	cfg.Type = "fastest"
+	cfg.TestURL = "http://example.test/probe"
+	cfg.MinEvalInterval = 0
+	if err := g.insertAccessProfileConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	runID, err := g.enqueueProfileEvaluationRun(cfg.ID, cfg.Name, "manual", cfg.ConfigVersion, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.runMaintenanceRun(runID); err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := g.loadMaintenanceRun(runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.State != maintenanceRunStateFinished || run.Result != maintenanceRunResultSuccess || run.ReasonCode != "initial_selection" {
+		t.Fatalf("profile evaluation run status = %#v, want finished success initial_selection", run)
+	}
+	if run.TotalCount != 2 || run.FinishedCount != 2 {
+		t.Fatalf("profile evaluation counts = %d/%d, want 2/2", run.FinishedCount, run.TotalCount)
+	}
+	detail := run.detail()
+	if detail["candidate_count"] != float64(2) || detail["success_count"] != float64(1) || detail["failure_count"] != float64(1) || detail["selected_node_id"] != "node_ok" {
+		t.Fatalf("profile evaluation detail = %#v, want candidate=2 success=1 failure=1 selected node_ok", detail)
 	}
 }
 
@@ -703,5 +744,26 @@ func (e deletingHTTP200Engine) DialNode(node nodeRecord, target string, timeouts
 }
 
 func (e deletingHTTP200Engine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+	return e.DialNode(frontNode, target, timeouts)
+}
+
+type mixedProfileEvaluationEngine struct {
+	failingNodeID string
+}
+
+func (e mixedProfileEvaluationEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+	if node.ID == e.failingNodeID {
+		return nil, errors.New("candidate dial failed")
+	}
+	client, server := net.Pipe()
+	go func() {
+		defer server.Close()
+		_, _ = http.ReadRequest(bufio.NewReader(server))
+		_, _ = server.Write([]byte("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"))
+	}()
+	return client, nil
+}
+
+func (e mixedProfileEvaluationEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
 	return e.DialNode(frontNode, target, timeouts)
 }

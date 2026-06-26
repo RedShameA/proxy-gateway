@@ -8,6 +8,8 @@ import (
 	"time"
 
 	appobservations "proxygateway/internal/application/observations"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -41,6 +43,7 @@ func (r *maintenanceRunner) start() {
 		return
 	}
 	r.started = true
+	r.g.log().Info("maintenance runner started")
 	go r.loop()
 }
 
@@ -52,11 +55,14 @@ func (r *maintenanceRunner) loop() {
 	for {
 		select {
 		case <-r.g.ctx.Done():
+			r.g.log().Info("maintenance runner stopped")
 			return
 		case <-r.wake:
+			r.g.log().Debug("maintenance runner woke")
 			r.enqueueDueScheduledTasks()
 			r.runQueuedTasks()
 		case <-ticker.C:
+			r.g.log().Debug("maintenance runner tick")
 			r.enqueueDueScheduledTasks()
 			r.runQueuedTasks()
 		}
@@ -76,6 +82,7 @@ func (r *maintenanceRunner) notify() {
 func (r *maintenanceRunner) enqueueDueScheduledTasks() {
 	settings, err := r.g.loadMaintenanceSettings()
 	if err != nil {
+		r.g.log().Warn("load maintenance settings failed", zap.Error(err))
 		return
 	}
 	now := time.Now()
@@ -108,6 +115,7 @@ func (r *maintenanceRunner) enqueueNodeObservationSchedule(now int64, settings m
 		  ORDER BY n.created_at, n.id`,
 	)
 	if err != nil {
+		r.g.log().Warn("query node observation schedule targets failed", zap.Error(err))
 		return
 	}
 	var targets []nodeRecord
@@ -118,6 +126,7 @@ func (r *maintenanceRunner) enqueueNodeObservationSchedule(now int64, settings m
 		}
 	}
 	if err := rows.Close(); err != nil {
+		r.g.log().Warn("close node observation schedule rows failed", zap.Error(err))
 		return
 	}
 	if !r.reserveScheduledNodeObservation(now, settings.NodeObservationSeconds) {
@@ -129,12 +138,27 @@ func (r *maintenanceRunner) enqueueNodeObservationSchedule(now int64, settings m
 		r.g.hasUnfinishedNodeObservationAggregateRun(),
 	)
 	if !plan.CreateRun {
+		r.g.log().Debug("node observation schedule skipped",
+			zap.String("reason", plan.ReasonCode),
+			zap.String("scope", plan.Scope),
+		)
 		return
 	}
 	run, err := r.g.createNodeObservationRun(plan.TriggerSource, plan.Scope, toObservationNodeRecords(plan.Targets), plan.ProbeURL)
 	if err != nil {
+		r.g.log().Warn("create node observation run failed",
+			zap.String("trigger_source", plan.TriggerSource),
+			zap.String("scope", plan.Scope),
+			zap.Error(err),
+		)
 		return
 	}
+	r.g.log().Info("maintenance run queued",
+		zap.String("run_id", run.ID),
+		zap.String("run_type", run.RunType),
+		zap.String("trigger_source", run.TriggerSource),
+		zap.Int("total_count", run.TotalCount),
+	)
 	if plan.FinishImmediately {
 		detail := run.detail()
 		detail["success_count"] = 0
@@ -187,6 +211,7 @@ func (r *maintenanceRunner) enqueueProfileEvaluationSchedule(now int64, settings
 		  ORDER BY created_at, id`,
 	)
 	if err != nil {
+		r.g.log().Warn("query profile evaluation schedule targets failed", zap.Error(err))
 		return
 	}
 	var targets []profileTarget
@@ -215,10 +240,23 @@ func (r *maintenanceRunner) enqueueProfileEvaluationSchedule(now int64, settings
 		}
 	}
 	if err := rows.Close(); err != nil {
+		r.g.log().Warn("close profile evaluation schedule rows failed", zap.Error(err))
 		return
 	}
 	for _, target := range targets {
-		_, _ = r.g.enqueueProfileEvaluationRun(target.ID, target.Name, "scheduled", target.ConfigVersion, false)
+		if runID, err := r.g.enqueueProfileEvaluationRun(target.ID, target.Name, "scheduled", target.ConfigVersion, false); err != nil {
+			r.g.log().Warn("enqueue profile evaluation run failed",
+				zap.String("profile_id", target.ID),
+				zap.String("profile_name", target.Name),
+				zap.Error(err),
+			)
+		} else {
+			r.g.log().Info("maintenance run queued",
+				zap.String("run_id", runID),
+				zap.String("run_type", maintenanceTaskProfileEvaluation),
+				zap.String("trigger_source", "scheduled"),
+			)
+		}
 	}
 }
 
@@ -234,6 +272,7 @@ func (r *maintenanceRunner) enqueueSubscriptionRefreshSchedule(now int64, settin
 		  ORDER BY created_at, id`,
 	)
 	if err != nil {
+		r.g.log().Warn("query subscription refresh schedule targets failed", zap.Error(err))
 		return
 	}
 	var targets []subscriptionTarget
@@ -256,10 +295,23 @@ func (r *maintenanceRunner) enqueueSubscriptionRefreshSchedule(now int64, settin
 		}
 	}
 	if err := rows.Close(); err != nil {
+		r.g.log().Warn("close subscription refresh schedule rows failed", zap.Error(err))
 		return
 	}
 	for _, target := range targets {
-		_, _ = r.g.enqueueSubscriptionRefreshRun(target.ID, target.Name, "scheduled")
+		if runID, err := r.g.enqueueSubscriptionRefreshRun(target.ID, target.Name, "scheduled"); err != nil {
+			r.g.log().Warn("enqueue subscription refresh run failed",
+				zap.String("subscription_id", target.ID),
+				zap.String("subscription_name", target.Name),
+				zap.Error(err),
+			)
+		} else {
+			r.g.log().Info("maintenance run queued",
+				zap.String("run_id", runID),
+				zap.String("run_type", maintenanceTaskSubscriptionRefresh),
+				zap.String("trigger_source", "scheduled"),
+			)
+		}
 	}
 }
 
@@ -276,9 +328,18 @@ func (r *maintenanceRunner) enqueueGeoIPUpdateSchedule(now int64, settings maint
 	if loadedAt > 0 && (now < scheduledAt || updatedAt >= scheduledAt) {
 		return
 	}
-	_, _ = r.g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, "scheduled", "country.mmdb", "GeoIP Database", 1, map[string]any{
+	run, err := r.g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, "scheduled", "country.mmdb", "GeoIP Database", 1, map[string]any{
 		"source": "MetaCubeX",
 	})
+	if err != nil {
+		r.g.log().Warn("enqueue geoip update run failed", zap.Error(err))
+		return
+	}
+	r.g.log().Info("maintenance run queued",
+		zap.String("run_id", run.ID),
+		zap.String("run_type", run.RunType),
+		zap.String("trigger_source", run.TriggerSource),
+	)
 	r.g.notifyMaintenanceRunner()
 }
 
@@ -293,7 +354,16 @@ func (r *maintenanceRunner) enqueueLogCleanupSchedule(now int64) {
 	if recent > 0 {
 		return
 	}
-	_, _ = r.g.createMaintenanceRun(maintenanceRunTypeLogCleanup, "scheduled", "", "Retention cleanup", 0, map[string]any{})
+	run, err := r.g.createMaintenanceRun(maintenanceRunTypeLogCleanup, "scheduled", "", "Retention cleanup", 0, map[string]any{})
+	if err != nil {
+		r.g.log().Warn("enqueue log cleanup run failed", zap.Error(err))
+		return
+	}
+	r.g.log().Info("maintenance run queued",
+		zap.String("run_id", run.ID),
+		zap.String("run_type", run.RunType),
+		zap.String("trigger_source", run.TriggerSource),
+	)
 	r.g.notifyMaintenanceRunner()
 }
 
@@ -313,19 +383,28 @@ func (r *maintenanceRunner) runQueuedTasks() {
 		}
 		settings, err := r.g.loadMaintenanceSettings()
 		if err != nil {
+			r.g.log().Warn("load maintenance settings failed", zap.Error(err))
 			return
 		}
 		runs := r.g.claimNextQueuedMaintenanceRunBatch(settings)
 		if len(runs) == 0 {
 			return
 		}
+		r.g.log().Info("maintenance run batch claimed", zap.Int("count", len(runs)), zap.String("run_type", runs[0].RunType))
 		var wg sync.WaitGroup
 		for _, run := range runs {
 			run := run
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_ = r.g.runMaintenanceRun(run.ID)
+				if err := r.g.runMaintenanceRun(run.ID); err != nil {
+					r.g.log().Warn("maintenance run failed",
+						zap.String("run_id", run.ID),
+						zap.String("run_type", run.RunType),
+						zap.String("trigger_source", run.TriggerSource),
+						zap.Error(err),
+					)
+				}
 			}()
 		}
 		wg.Wait()

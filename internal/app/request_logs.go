@@ -10,6 +10,8 @@ import (
 	"time"
 
 	appproxy "proxygateway/internal/application/proxy"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -22,6 +24,8 @@ const (
 
 	requestLogQueueCapacity = 4096
 	requestLogFlushTimeout  = 2 * time.Second
+
+	requestLogDropWarnEvery = 100
 )
 
 type requestLogEventKind int
@@ -61,14 +65,16 @@ type requestLogWriter struct {
 	mu      sync.Mutex
 	closing bool
 	dropped atomic.Int64
+	logger  *zap.Logger
 }
 
-func newRequestLogWriter(db *sql.DB) *requestLogWriter {
+func newRequestLogWriter(db *sql.DB, logger *zap.Logger) *requestLogWriter {
 	w := &requestLogWriter{
 		db:     db,
 		events: make(chan requestLogEvent, requestLogQueueCapacity),
 		stop:   make(chan struct{}),
 		done:   make(chan struct{}),
+		logger: ensureLogger(logger),
 	}
 	go w.run()
 	return w
@@ -81,15 +87,29 @@ func (w *requestLogWriter) enqueue(event requestLogEvent) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closing {
-		w.dropped.Add(1)
+		w.recordDrop(event, "closing")
 		return false
 	}
 	select {
 	case w.events <- event:
 		return true
 	default:
-		w.dropped.Add(1)
+		w.recordDrop(event, "queue_full")
 		return false
+	}
+}
+
+func (w *requestLogWriter) recordDrop(event requestLogEvent, reason string) {
+	dropped := w.dropped.Add(1)
+	if dropped == 1 || dropped%requestLogDropWarnEvery == 0 {
+		ensureLogger(w.logger).Warn("request log event dropped",
+			zap.String("reason", reason),
+			zap.Int64("dropped_total", dropped),
+			zap.String("event_kind", requestLogEventKindName(event.kind)),
+			zap.String("log_id", event.id),
+			zap.String("target_host", event.targetHost),
+			zap.String("failure_stage", event.failureStage),
+		)
 	}
 }
 
@@ -141,9 +161,10 @@ func (w *requestLogWriter) run() {
 }
 
 func (w *requestLogWriter) write(event requestLogEvent) {
+	var err error
 	switch event.kind {
 	case requestLogEventStart:
-		_, _ = w.db.Exec(
+		_, err = w.db.Exec(
 			`INSERT INTO request_logs (
 				id, ts, proxy_credential_id, proxy_credential, access_profile_id, access_profile, access_profile_identifier,
 				target_host, proxy_path, proxy_path_json, state, success, failure_stage, error, duration_ms, ingress_bytes, egress_bytes, http_status
@@ -168,7 +189,7 @@ func (w *requestLogWriter) write(event requestLogEvent) {
 		if event.success {
 			successInt = 1
 		}
-		_, _ = w.db.Exec(
+		_, err = w.db.Exec(
 			`UPDATE request_logs
 			    SET state = 'completed',
 			        success = ?,
@@ -189,7 +210,7 @@ func (w *requestLogWriter) write(event requestLogEvent) {
 			event.id,
 		)
 	case requestLogEventFailure:
-		_, _ = w.db.Exec(
+		_, err = w.db.Exec(
 			`INSERT INTO request_logs (
 				id, ts, proxy_credential_id, proxy_credential, access_profile_id, access_profile, access_profile_identifier,
 				target_host, proxy_path, proxy_path_json, state, success, failure_stage, error, duration_ms, ingress_bytes, egress_bytes, http_status
@@ -204,6 +225,34 @@ func (w *requestLogWriter) write(event requestLogEvent) {
 			event.durationMS,
 			event.httpStatus,
 		)
+	default:
+		ensureLogger(w.logger).Warn("unknown request log event kind",
+			zap.Int("event_kind", int(event.kind)),
+			zap.String("log_id", event.id),
+		)
+		return
+	}
+	if err != nil {
+		ensureLogger(w.logger).Error("write request log event failed",
+			zap.String("event_kind", requestLogEventKindName(event.kind)),
+			zap.String("log_id", event.id),
+			zap.String("target_host", event.targetHost),
+			zap.String("failure_stage", event.failureStage),
+			zap.Error(err),
+		)
+	}
+}
+
+func requestLogEventKindName(kind requestLogEventKind) string {
+	switch kind {
+	case requestLogEventStart:
+		return "start"
+	case requestLogEventFinish:
+		return "finish"
+	case requestLogEventFailure:
+		return "failure"
+	default:
+		return "unknown"
 	}
 }
 
@@ -382,6 +431,23 @@ func (g *Gateway) finishProxyRequest(id string, success bool, failureStage strin
 	if id == "" {
 		return
 	}
+	if success {
+		g.log().Debug("proxy request completed",
+			zap.String("log_id", id),
+			zap.Int("http_status", httpStatus),
+			zap.Int64("duration_ms", durationMS),
+			zap.Int64("ingress_bytes", ingressBytes),
+			zap.Int64("egress_bytes", egressBytes),
+		)
+	} else {
+		g.log().Warn("proxy request failed",
+			zap.String("log_id", id),
+			zap.String("failure_stage", failureStage),
+			zap.String("error", errorText),
+			zap.Int("http_status", httpStatus),
+			zap.Int64("duration_ms", durationMS),
+		)
+	}
 	record := appproxy.BuildRequestLogFinish(appproxy.RequestLogFinishInput{
 		ID:           id,
 		Success:      success,
@@ -414,6 +480,15 @@ func (g *Gateway) recordProxyFailure(targetHost, profileIdentifier, failureStage
 		return
 	}
 	durationMS := elapsedMilliseconds(startedAt)
+	g.log().Warn("proxy request rejected",
+		zap.String("log_id", id),
+		zap.String("target_host", targetHost),
+		zap.String("profile_identifier", profileIdentifier),
+		zap.String("failure_stage", failureStage),
+		zap.String("error", errorText),
+		zap.Int("http_status", httpStatus),
+		zap.Int64("duration_ms", durationMS),
+	)
 	record := appproxy.BuildRequestLogFailure(appproxy.RequestLogFailureInput{
 		ID:                id,
 		Timestamp:         startedAt.UnixMilli(),

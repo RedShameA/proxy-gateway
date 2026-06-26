@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 )
@@ -187,6 +188,7 @@ func createHTTPNode(t *testing.T, baseURL, adminToken, name string, upstreamProx
 }
 
 type testHTTPConnectProxy struct {
+	mu                sync.RWMutex
 	host              string
 	port              int
 	connects          int
@@ -199,6 +201,7 @@ type testHTTPConnectProxy struct {
 }
 
 type testSOCKS5Proxy struct {
+	mu                 sync.RWMutex
 	host               string
 	port               int
 	connects           int
@@ -213,6 +216,30 @@ func (p *testHTTPConnectProxy) portText() string {
 
 func (p *testSOCKS5Proxy) portText() string {
 	return fmt.Sprintf("%d", p.port)
+}
+
+func (p *testHTTPConnectProxy) setDelay(delay time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.delay = delay
+}
+
+func (p *testHTTPConnectProxy) delayDuration() time.Duration {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.delay
+}
+
+func (p *testSOCKS5Proxy) setDelay(delay time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.delay = delay
+}
+
+func (p *testSOCKS5Proxy) delayDuration() time.Duration {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.delay
 }
 
 func newHTTPConnectProxy(t *testing.T) *testHTTPConnectProxy {
@@ -283,8 +310,8 @@ func (p *testHTTPConnectProxy) handle(conn net.Conn) {
 		return
 	}
 	p.connects++
-	if p.delay > 0 {
-		time.Sleep(p.delay)
+	if delay := p.delayDuration(); delay > 0 {
+		time.Sleep(delay)
 	}
 	if p.connectOnlyHosts[req.Host] {
 		_, _ = conn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
@@ -399,8 +426,8 @@ func (p *testSOCKS5Proxy) handle(conn net.Conn) {
 		return
 	}
 	p.connects++
-	if p.delay > 0 {
-		time.Sleep(p.delay)
+	if delay := p.delayDuration(); delay > 0 {
+		time.Sleep(delay)
 	}
 	if p.connectOnlyTargets[net.JoinHostPort(host, fmt.Sprintf("%d", port))] {
 		_, _ = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})

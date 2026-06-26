@@ -11,6 +11,8 @@ import (
 
 	geoipinfra "proxygateway/internal/infrastructure/geoip"
 	storageinfra "proxygateway/internal/infrastructure/storage"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -18,12 +20,34 @@ const (
 	httpReadHeaderTimeout  = 10 * time.Second
 )
 
-func New(dataDir string) (*Gateway, error) {
+type Option func(*options)
+
+type options struct {
+	logger *zap.Logger
+}
+
+func WithLogger(logger *zap.Logger) Option {
+	return func(options *options) {
+		options.logger = logger
+	}
+}
+
+func New(dataDir string, opts ...Option) (*Gateway, error) {
+	var config options
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&config)
+		}
+	}
+	logger := ensureLogger(config.logger)
+
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		logger.Error("create data directory failed", zap.String("data_dir", dataDir), zap.Error(err))
 		return nil, err
 	}
 	store, err := storageinfra.Open(storageinfra.Config{DataDir: dataDir})
 	if err != nil {
+		logger.Error("open storage failed", zap.String("data_dir", dataDir), zap.Error(err))
 		return nil, err
 	}
 	db := store.DB
@@ -32,6 +56,7 @@ func New(dataDir string) (*Gateway, error) {
 	if err != nil {
 		cancel()
 		_ = db.Close()
+		logger.Error("create protocol engine failed", zap.Error(err))
 		return nil, err
 	}
 	g := &Gateway{
@@ -42,22 +67,27 @@ func New(dataDir string) (*Gateway, error) {
 		adminLogins:    newAdminLoginLimiter(),
 		ctx:            ctx,
 		cancel:         cancel,
+		logger:         logger.Named("gateway"),
 	}
 	if err := g.migrate(); err != nil {
 		_ = protocolEngine.Close()
 		cancel()
 		_ = db.Close()
+		logger.Error("database migration failed", zap.String("data_dir", dataDir), zap.Error(err))
 		return nil, err
 	}
 	if err := g.cancelExpiredMaintenanceRunsOnStartup(); err != nil {
+		_ = protocolEngine.Close()
 		cancel()
 		_ = db.Close()
+		logger.Error("startup cleanup failed", zap.String("data_dir", dataDir), zap.Error(err))
 		return nil, err
 	}
 	g.geoIP = geoipinfra.NewService(dataDir, db)
 	g.geoIP.LoadExisting()
 	g.maintenance = newMaintenanceRunner(g)
-	g.requestLogs = newRequestLogWriter(db)
+	g.requestLogs = newRequestLogWriter(db, g.logger.Named("request_log_writer"))
+	g.log().Info("gateway initialized", zap.String("data_dir", dataDir))
 	return g, nil
 }
 
@@ -86,14 +116,18 @@ func (g *Gateway) Close() error {
 		if engine, ok := g.protocolEngine.(closeableNodeProtocolEngine); ok {
 			if closeErr := engine.Close(); closeErr != nil && err == nil {
 				err = closeErr
+				g.log().Error("close protocol engine failed", zap.Error(closeErr))
 			}
 		}
 		if g.requestLogs != nil {
-			g.requestLogs.close(requestLogFlushTimeout)
+			if ok := g.requestLogs.close(requestLogFlushTimeout); !ok {
+				g.log().Warn("request log writer close timed out", zap.Duration("timeout", requestLogFlushTimeout))
+			}
 		}
 		if g.db != nil {
 			if closeErr := g.db.Close(); closeErr != nil && err == nil {
 				err = closeErr
+				g.log().Error("close database failed", zap.Error(closeErr))
 			}
 		}
 	})
@@ -104,9 +138,11 @@ func (g *Gateway) Serve(ln net.Listener) error {
 	if g.maintenance != nil {
 		g.maintenance.start()
 	}
+	g.log().Info("gateway accepting connections", zap.String("addr", ln.Addr().String()))
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			g.log().Error("listener accept failed", zap.Error(err))
 			return err
 		}
 		go g.serveEntrypointConn(conn)

@@ -43,6 +43,25 @@ docker pull ghcr.io/redshamea/proxy-gateway:latest
 
 每次发布都会同时推送 `latest`、`vMAJOR.MINOR.PATCH` 和 `sha-<commit>` 标签。生产环境建议优先使用版本标签，例如 `v0.1.0`；需要固定到明确源码版本时，可以使用 `sha-<commit>` 标签。镜像包含 `org.opencontainers.image.version` 和 `org.opencontainers.image.revision` 标签，运行中的服务也会在 `/api/system/setup-status` 返回对应版本和 revision，可用于追溯到公开源码 commit。
 
+## 日志
+
+后端进程日志默认输出到 stdout/stderr，可通过 `docker logs` 或二进制运行控制台查看。默认日志级别为 `info`，可使用 `PROXYGATEWAY_LOG_LEVEL` 调整为 `debug`、`info`、`warn` 或 `error`：
+
+```bash
+docker run -d \
+  --name proxy-gateway \
+  -p 8080:8080 \
+  -v proxy-gateway-data:/data \
+  -e PROXYGATEWAY_LOG_LEVEL=debug \
+  ghcr.io/redshamea/proxy-gateway:latest
+```
+
+本地二进制运行示例：
+
+```bash
+PROXYGATEWAY_LOG_LEVEL=warn ./proxygateway
+```
+
 ## 文档
 
 - [术语表](docs/glossary.md)

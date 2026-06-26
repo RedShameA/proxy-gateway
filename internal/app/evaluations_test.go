@@ -166,6 +166,12 @@ func TestFastestProfileKeepsCurrentPathUnlessCandidateIsClearlyBetter(t *testing
 		"chain_candidate_limit":                   100,
 	})
 	decodeOK(t, settingsResp, &struct{}{})
+	decodeOK(t, patchJSON(t, srv.URL+"/api/system/settings", adminToken, map[string]any{
+		"switching_tolerance": map[string]any{
+			"relative_improvement_threshold":  0.80,
+			"absolute_latency_improvement_ms": 500,
+		},
+	}), &struct{}{})
 
 	currentNodeID := createHTTPNode(t, srv.URL, adminToken, "stable-current", currentProxy)
 	createHTTPNode(t, srv.URL, adminToken, "stable-challenger", challengerProxy)
@@ -183,8 +189,8 @@ func TestFastestProfileKeepsCurrentPathUnlessCandidateIsClearlyBetter(t *testing
 	decodeOK(t, evalResp, &struct{}{})
 	assertProfileCurrentNode(t, srv.URL, adminToken, profile.ID, currentNodeID, "ready")
 
-	currentProxy.delay = 100 * time.Millisecond
-	challengerProxy.delay = 85 * time.Millisecond
+	currentProxy.setDelay(100 * time.Millisecond)
+	challengerProxy.setDelay(85 * time.Millisecond)
 	evalResp = postJSON(t, srv.URL+"/api/evaluations/run", adminToken, map[string]any{})
 	decodeOK(t, evalResp, &struct{}{})
 	assertProfileCurrentNode(t, srv.URL, adminToken, profile.ID, currentNodeID, "ready")
@@ -455,7 +461,7 @@ func TestFastestProfileCountryFilterChangeDropsStaleCurrentPath(t *testing.T) {
 
 	hkProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "HK")
 	jpProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "JP")
-	jpProxy.delay = 80 * time.Millisecond
+	jpProxy.setDelay(80 * time.Millisecond)
 	gw := app.NewForTest(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
