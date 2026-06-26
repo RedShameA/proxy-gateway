@@ -64,12 +64,15 @@ body { background: var(--semi-color-bg-0); color: var(--semi-color-text-0); font
 
 .app-brand {
   display: inline-flex;
-  align-items: center;
-  gap: 9px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   min-width: 0;
+  max-width: 100%;
 }
 
 .app-brand-name {
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -80,6 +83,9 @@ body { background: var(--semi-color-bg-0); color: var(--semi-color-text-0); font
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex: 0 0 auto;
+  max-width: 100%;
+  width: fit-content;
   height: 20px;
   padding: 0 8px 0 7px;
   border: 1px solid rgba(var(--semi-blue-5), 0.26);

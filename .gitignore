@@ -33,6 +33,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Local editor/env files
+AGENTS.md
 .env
 .env.*
 !.env.example
