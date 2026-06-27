@@ -1,6 +1,10 @@
 package proxy
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+	"strings"
+)
 
 type ProxyCredentialSnapshot struct {
 	ID     string
@@ -94,6 +98,99 @@ type RequestLogFailureRecord struct {
 	DurationMS              int64
 }
 
+type RequestLogEntry struct {
+	ID                      string
+	Timestamp               int64
+	ProxyCredentialID       string
+	ProxyCredential         string
+	AccessProfileID         string
+	AccessProfile           string
+	AccessProfileIdentifier string
+	TargetHost              string
+	ProxyPath               string
+	ProxyPathJSON           string
+	State                   string
+	Success                 *bool
+	FailureStage            string
+	Error                   string
+	DurationMS              int64
+	IngressBytes            int64
+	EgressBytes             int64
+	HTTPStatus              int
+}
+
+type RequestLogListFilter struct {
+	AccessProfile string
+	Credential    string
+	NodeID        string
+	Target        string
+	State         string
+	Result        string
+	Page          int
+	PageSize      int
+}
+
+type RequestLogListResult struct {
+	Items    []RequestLogEntry
+	Total    int
+	Page     int
+	PageSize int
+}
+
+type RequestLogCounts struct {
+	Total  int
+	Failed int
+}
+
+type RequestLogRepository interface {
+	InsertStart(ctx context.Context, record RequestLogStartRecord) error
+	Finish(ctx context.Context, record RequestLogFinishRecord) error
+	InsertFailure(ctx context.Context, record RequestLogFailureRecord) error
+	List(ctx context.Context, filter RequestLogListFilter) (RequestLogListResult, error)
+	CountSince(ctx context.Context, cutoffMillis int64) (RequestLogCounts, error)
+	ListRecentFailures(ctx context.Context, limit int) ([]RequestLogEntry, error)
+	DeleteBefore(ctx context.Context, cutoffMillis int64) (int64, error)
+}
+
+func RequestLogEntryToMap(item RequestLogEntry, nowMillis int64) map[string]any {
+	result, successValue := requestLogResult(item.State, item.Success)
+	durationMS := item.DurationMS
+	if item.State == "running" && durationMS <= 0 {
+		durationMS = nowMillis - item.Timestamp
+		if durationMS <= 0 {
+			durationMS = 1
+		}
+	}
+	var httpStatusPtr any = nil
+	if item.HTTPStatus > 0 {
+		httpStatusPtr = item.HTTPStatus
+	}
+	var credentialID any = item.ProxyCredentialID
+	if item.ProxyCredentialID == "" {
+		credentialID = nil
+	}
+	return map[string]any{
+		"id":               item.ID,
+		"occurred_at":      item.Timestamp,
+		"access_profile":   map[string]any{"id": item.AccessProfileID, "name": item.AccessProfile, "profile_identifier": item.AccessProfileIdentifier},
+		"proxy_credential": map[string]any{"id": credentialID, "remark": item.ProxyCredential},
+		"target_host":      item.TargetHost,
+		"target_port":      targetPortFromTarget(item.TargetHost),
+		"target":           item.TargetHost,
+		"proxy_path":       parseRequestLogProxyPath(item.ProxyPathJSON),
+		"proxy_path_label": item.ProxyPath,
+		"state":            item.State,
+		"result":           result,
+		"success":          successValue,
+		"failure_stage":    item.FailureStage,
+		"error":            item.Error,
+		"duration_ms":      durationMS,
+		"ingress_bytes":    item.IngressBytes,
+		"egress_bytes":     item.EgressBytes,
+		"http_status":      httpStatusPtr,
+	}
+}
+
 func BuildRequestLogStart(input RequestLogStartInput) RequestLogStartRecord {
 	return RequestLogStartRecord{
 		ID:                      input.ID,
@@ -138,6 +235,37 @@ func BuildRequestLogFailure(input RequestLogFailureInput) RequestLogFailureRecor
 		HTTPStatus:              input.HTTPStatus,
 		DurationMS:              input.DurationMS,
 	}
+}
+
+func requestLogResult(state string, success *bool) (string, any) {
+	if state == "running" {
+		return "running", nil
+	}
+	if success != nil && *success {
+		return "success", true
+	}
+	return "failure", false
+}
+
+func parseRequestLogProxyPath(raw string) any {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var value map[string]any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return nil
+	}
+	return value
+}
+
+func targetPortFromTarget(target string) int {
+	if strings.HasSuffix(target, ":443") {
+		return 443
+	}
+	if strings.HasSuffix(target, ":80") {
+		return 80
+	}
+	return 0
 }
 
 func proxyPathLabel(path ProxyPathSnapshot) string {

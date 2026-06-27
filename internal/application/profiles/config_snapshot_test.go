@@ -1,0 +1,76 @@
+package profiles
+
+import "testing"
+
+func TestConfigRecordDomainSnapshot(t *testing.T) {
+	record := ConfigRecord{
+		Type:                         "chain",
+		FixedNodeID:                  "exit_1",
+		ExitNodeIDs:                  []string{"exit_1"},
+		ChainEvaluationMode:          "chain_link",
+		TestURL:                      "https://example.com",
+		EgressCountry:                "JP",
+		EgressCountryMode:            "include",
+		EgressCountries:              []string{"JP"},
+		NodeSourceMode:               "subscriptions",
+		SourceIDs:                    []string{"sub_1"},
+		Protocols:                    []string{"vmess"},
+		NameIncludeRegex:             "tokyo",
+		NameExcludeRegex:             "slow",
+		ManualOnly:                   false,
+		MinEvaluationIntervalSeconds: 30,
+		CandidateLimit:               10,
+		RelativeImprovementThreshold: 0.2,
+		AbsoluteLatencyImprovementMS: 100,
+		CurrentNodeID:                "front_1",
+		CurrentExitNodeID:            "exit_1",
+		State:                        "ready",
+		CurrentPathLatencyMS:         123,
+		SwitchReason:                 "completed",
+		LastEvaluationDetailsJSON:    "{}",
+		AutoEvaluationEnabled:        true,
+		AutoEvaluationInterval:       300,
+		NodeStickyEnabled:            true,
+		ConfigVersion:                7,
+	}
+
+	snapshot := record.DomainSnapshot()
+
+	if snapshot.Type != "chain" || snapshot.FixedNodeID != "exit_1" || snapshot.CurrentNodeID != "front_1" {
+		t.Fatalf("snapshot identity/path = %#v", snapshot)
+	}
+	if snapshot.MinEvaluationIntervalSeconds != 30 || snapshot.AutoEvaluationInterval != 300 || snapshot.ConfigVersion != 7 {
+		t.Fatalf("snapshot timing/version = %#v", snapshot)
+	}
+	if len(snapshot.EgressCountries) != 1 || snapshot.EgressCountries[0] != "JP" {
+		t.Fatalf("snapshot countries = %#v", snapshot.EgressCountries)
+	}
+}
+
+func TestApplyDomainSnapshotUpdatesRuntimeFields(t *testing.T) {
+	record := ConfigRecord{
+		Type:        "fastest",
+		FixedNodeID: "node_keep",
+		State:       "running",
+	}
+	snapshot := record.DomainSnapshot()
+	snapshot.CurrentNodeID = "node_1"
+	snapshot.CurrentExitNodeID = "exit_1"
+	snapshot.CurrentPathLatencyMS = 88
+	snapshot.SwitchReason = "candidate_better"
+	snapshot.LastEvaluationDetailsJSON = `{"ok":true}`
+	snapshot.State = "ready"
+	snapshot.ConfigVersion = 3
+
+	ApplyDomainSnapshot(&record, snapshot)
+
+	if record.Type != "fastest" || record.FixedNodeID != "node_keep" {
+		t.Fatalf("stable config fields changed = %#v", record)
+	}
+	if record.CurrentNodeID != "node_1" || record.CurrentExitNodeID != "exit_1" || record.State != "ready" {
+		t.Fatalf("runtime fields = %#v", record)
+	}
+	if record.CurrentPathLatencyMS != 88 || record.SwitchReason != "candidate_better" || record.ConfigVersion != 3 {
+		t.Fatalf("runtime detail fields = %#v", record)
+	}
+}

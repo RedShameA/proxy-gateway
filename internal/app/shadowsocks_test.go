@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"proxygateway/internal/app"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
 
 	"github.com/sagernet/sing-shadowsocks/shadowaead"
@@ -20,7 +21,7 @@ import (
 func TestShadowsocksClashAndURIImportsCreateNodes(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -80,7 +81,7 @@ proxies:
 func TestShadowsocksMissingRequiredFieldsAreSkipped(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -175,7 +176,7 @@ func TestShadowsocksNodeCanServeFixedNodeHTTPProxyPath(t *testing.T) {
 	}
 
 	ssHost, ssPort := newSingShadowsocksServer(t, "aes-128-gcm", "shadowsocks-password")
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -256,7 +257,7 @@ func TestShadowsocksNodeObservationRecordsEgressCountry(t *testing.T) {
 	t.Cleanup(egress.Close)
 
 	ssHost, ssPort := newSingShadowsocksServer(t, "aes-128-gcm", "observe-password")
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -303,7 +304,7 @@ func TestFastestProfileCanSelectShadowsocksNode(t *testing.T) {
 	}
 
 	ssHost, ssPort := newSingShadowsocksServer(t, "aes-128-gcm", "fastest-password")
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -366,7 +367,7 @@ func TestFastestProfileWithFailingShadowsocksCandidateIsFailedNotNoCandidate(t *
 	t.Cleanup(target.Close)
 
 	closedPort := freeTCPPort(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

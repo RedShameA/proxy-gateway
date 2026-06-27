@@ -6,12 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"proxygateway/internal/testsupport/apptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"proxygateway/internal/app"
 )
 
 func TestSupportedProtocolObservationsRecordCountryLatencyAndErrors(t *testing.T) {
@@ -28,7 +27,7 @@ func TestSupportedProtocolObservationsRecordCountryLatencyAndErrors(t *testing.T
 	vmessUserID := "b56fe3b5-9734-4060-a5d9-74ee0d3292f0"
 	vmessHost, vmessPort := newSingVMessServer(t, vmessUserID)
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -91,7 +90,7 @@ func TestFastestProfileChoosesFastestNodeAcrossSupportedProtocols(t *testing.T) 
 
 	slowHTTP := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
 	fastSOCKS := newDelayedSOCKS5Proxy(t, 0)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -160,7 +159,7 @@ func TestCountryProfilesUseObservedNonHTTPRuntimeProtocols(t *testing.T) {
 	ssHost, ssPort := newSingShadowsocksServer(t, "aes-128-gcm", "country-ss-password")
 	vmessUserID := "67f80901-2959-4d75-9a28-a69f2991959d"
 	vmessHost, vmessPort := newSingVMessServer(t, vmessUserID)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -245,7 +244,7 @@ func TestChainProfilesUseMixedSupportedRuntimeProtocols(t *testing.T) {
 	vmessHost, vmessPort := newSingVMessServer(t, vmessUserID)
 	slowFront := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
 	fastFront := newDelayedSOCKS5Proxy(t, 0)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -320,7 +319,7 @@ func TestProfileFailureStatesAndProxyLogsAcrossProtocolBoundaries(t *testing.T) 
 	t.Cleanup(target.Close)
 
 	degradedProxy := newHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

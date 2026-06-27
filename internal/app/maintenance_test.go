@@ -3,9 +3,8 @@ package app_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
-
-	"proxygateway/internal/app"
 )
 
 func TestMaintenanceRunsExposeCompletedManualAllNodeObservation(t *testing.T) {
@@ -16,7 +15,7 @@ func TestMaintenanceRunsExposeCompletedManualAllNodeObservation(t *testing.T) {
 	}))
 	t.Cleanup(probe.Close)
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -99,7 +98,7 @@ func TestMaintenanceRunsExposeCompletedManualAllNodeObservation(t *testing.T) {
 func TestSubscriptionAutoRefreshSettingsAreExposedAndPatchable(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -145,7 +144,7 @@ func TestSubscriptionAutoRefreshSettingsAreExposedAndPatchable(t *testing.T) {
 func TestAccessProfileAutoEvaluationSettingsAreExposedPatchableAndTriggerRun(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

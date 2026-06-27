@@ -69,8 +69,8 @@ func TestScheduledNodeObservationCreatesAllNodeRunAndSkipsWhenAggregateUnfinishe
 	if run.TriggerSource != "scheduled" || run.State != maintenanceRunStateQueued || run.TotalCount != 2 {
 		t.Fatalf("scheduled all-node run = %#v, want queued scheduled run with total 2", run)
 	}
-	if run.detail()["target_scope"] != "all_nodes" {
-		t.Fatalf("scheduled detail = %#v, want all_nodes", run.detail())
+	if maintenanceRunDetail(run)["target_scope"] != "all_nodes" {
+		t.Fatalf("scheduled detail = %#v, want all_nodes", maintenanceRunDetail(run))
 	}
 
 	g2 := NewForTest(t)
@@ -179,7 +179,7 @@ func TestScheduledNodeObservationIncludesAllEnabledNodes(t *testing.T) {
 	insertMaintenanceRunTestNode(t, g, "node_success_recent", "success-recent")
 	insertMaintenanceRunTestNode(t, g, "node_never_observed", "never-observed")
 	insertMaintenanceRunTestNode(t, g, "node_disabled", "disabled")
-	if _, err := g.db.Exec(`UPDATE nodes SET enabled = 0 WHERE id = 'node_disabled'`); err != nil {
+	if _, err := g.store.DB.Exec(`UPDATE nodes SET enabled = 0 WHERE id = 'node_disabled'`); err != nil {
 		t.Fatal(err)
 	}
 	settings := normalizeMaintenanceSettings(maintenanceSettings{
@@ -188,7 +188,7 @@ func TestScheduledNodeObservationIncludesAllEnabledNodes(t *testing.T) {
 		NodeObservationConcurrency: 1,
 	})
 	now := int64(10_000_000)
-	if _, err := g.db.Exec(
+	if _, err := g.store.DB.Exec(
 		`INSERT INTO node_observations (node_id, usable, last_error, last_success_at, last_failure_at)
 		 VALUES ('node_failed_recent', 0, 'recent failure', 0, ?),
 		        ('node_failed_stale', 0, 'stale failure', 0, ?),
@@ -206,9 +206,9 @@ func TestScheduledNodeObservationIncludesAllEnabledNodes(t *testing.T) {
 	if run.TotalCount != 4 {
 		t.Fatalf("scheduled all-node run total = %d, want all 4 enabled nodes", run.TotalCount)
 	}
-	nodeIDs, ok := run.detail()["node_ids"].([]any)
+	nodeIDs, ok := maintenanceRunDetail(run)["node_ids"].([]any)
 	if !ok {
-		t.Fatalf("scheduled node ids = %#v, want array", run.detail()["node_ids"])
+		t.Fatalf("scheduled node ids = %#v, want array", maintenanceRunDetail(run)["node_ids"])
 	}
 	got := map[string]bool{}
 	for _, nodeID := range nodeIDs {
@@ -289,7 +289,7 @@ func TestFastestEvaluationDoesNotWriteSelectedNodeDeletedBeforeCommit(t *testing
 		t.Fatal("evaluation succeeded after selected node was deleted, want failure")
 	}
 	var state, currentNodeID, switchReason, lastError string
-	if err := g.db.QueryRow(`SELECT state, current_node_id, switch_reason, last_error FROM access_profiles WHERE id = ?`, cfg.ID).Scan(&state, &currentNodeID, &switchReason, &lastError); err != nil {
+	if err := g.store.DB.QueryRow(`SELECT state, current_node_id, switch_reason, last_error FROM access_profiles WHERE id = ?`, cfg.ID).Scan(&state, &currentNodeID, &switchReason, &lastError); err != nil {
 		t.Fatal(err)
 	}
 	if state != "waiting_observation" || currentNodeID != "" || switchReason != "selected_node_removed" || lastError == "" {
@@ -311,7 +311,7 @@ func TestProfileEvaluationRunExecutesFastestProfile(t *testing.T) {
 	cfg.Name = "fastest run"
 	cfg.Type = "fastest"
 	cfg.TestURL = probe.URL
-	cfg.MinEvalInterval = 0
+	cfg.MinEvaluationIntervalSeconds = 0
 	if err := g.insertAccessProfileConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestProfileEvaluationRunExecutesFastestProfile(t *testing.T) {
 	if run.TotalCount != 1 || run.FinishedCount != 1 {
 		t.Fatalf("profile evaluation counts = %d/%d, want 1/1", run.FinishedCount, run.TotalCount)
 	}
-	detail := run.detail()
+	detail := maintenanceRunDetail(run)
 	if detail["candidate_count"] != float64(1) || detail["success_count"] != float64(1) || detail["selected_node_id"] != "node_fastest" {
 		t.Fatalf("profile evaluation detail = %#v, want candidate/success selected node", detail)
 	}
@@ -351,7 +351,7 @@ func TestProfileEvaluationRunSucceedsWithUsableCandidateDespiteFailures(t *testi
 	cfg.Name = "partial candidates"
 	cfg.Type = "fastest"
 	cfg.TestURL = "http://example.test/probe"
-	cfg.MinEvalInterval = 0
+	cfg.MinEvaluationIntervalSeconds = 0
 	if err := g.insertAccessProfileConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,7 @@ func TestProfileEvaluationRunSucceedsWithUsableCandidateDespiteFailures(t *testi
 	if run.TotalCount != 2 || run.FinishedCount != 2 {
 		t.Fatalf("profile evaluation counts = %d/%d, want 2/2", run.FinishedCount, run.TotalCount)
 	}
-	detail := run.detail()
+	detail := maintenanceRunDetail(run)
 	if detail["candidate_count"] != float64(2) || detail["success_count"] != float64(1) || detail["failure_count"] != float64(1) || detail["selected_node_id"] != "node_ok" {
 		t.Fatalf("profile evaluation detail = %#v, want candidate=2 success=1 failure=1 selected node_ok", detail)
 	}
@@ -389,7 +389,7 @@ func TestProfileEvaluationRunCancelsWhenSupersededByNewConfigVersion(t *testing.
 	cfg.Name = "stale config"
 	cfg.Type = "fastest"
 	cfg.TestURL = "http://example.test/models"
-	cfg.MinEvalInterval = 0
+	cfg.MinEvaluationIntervalSeconds = 0
 	if err := g.insertAccessProfileConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestProfileEvaluationRunCancelsWhenSupersededByNewConfigVersion(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.db.Exec(`UPDATE access_profiles SET config_version = ? WHERE id = ?`, cfg.ConfigVersion+1, cfg.ID); err != nil {
+	if _, err := g.store.DB.Exec(`UPDATE access_profiles SET config_version = ? WHERE id = ?`, cfg.ConfigVersion+1, cfg.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -412,8 +412,8 @@ func TestProfileEvaluationRunCancelsWhenSupersededByNewConfigVersion(t *testing.
 	if run.State != maintenanceRunStateFinished || run.Result != maintenanceRunResultCancelled || run.ReasonCode != "superseded_by_config_version" {
 		t.Fatalf("profile evaluation run status = %#v, want finished cancelled superseded_by_config_version", run)
 	}
-	if run.detail()["current_config_version"] != float64(cfg.ConfigVersion+1) {
-		t.Fatalf("run detail = %#v, want current_config_version=%d", run.detail(), cfg.ConfigVersion+1)
+	if maintenanceRunDetail(run)["current_config_version"] != float64(cfg.ConfigVersion+1) {
+		t.Fatalf("run detail = %#v, want current_config_version=%d", maintenanceRunDetail(run), cfg.ConfigVersion+1)
 	}
 }
 
@@ -456,8 +456,8 @@ func TestStartupCancelsUnfinishedMaintenanceRuns(t *testing.T) {
 		}
 	}
 	startup := startupCleanupRunWithCancelledCountForTest(t, reopened, 2)
-	if startup.RunType != maintenanceRunTypeStartup || startup.detail()["cancelled_count"] != float64(2) {
-		t.Fatalf("startup cleanup run = %#v detail=%#v, want cancelled_count 2", startup, startup.detail())
+	if startup.RunType != maintenanceRunTypeStartup || maintenanceRunDetail(startup)["cancelled_count"] != float64(2) {
+		t.Fatalf("startup cleanup run = %#v detail=%#v, want cancelled_count 2", startup, maintenanceRunDetail(startup))
 	}
 }
 
@@ -474,7 +474,7 @@ func TestStartupRepairsDanglingDynamicProfilePath(t *testing.T) {
 	cfg.Type = "fastest"
 	cfg.CurrentNodeID = "node_missing_current"
 	cfg.State = "ready"
-	cfg.AutoEvalEnabled = true
+	cfg.AutoEvaluationEnabled = true
 	if err := g.insertAccessProfileConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -489,18 +489,18 @@ func TestStartupRepairsDanglingDynamicProfilePath(t *testing.T) {
 	t.Cleanup(func() { _ = reopened.Close() })
 
 	var state, currentNodeID, switchReason string
-	if err := reopened.db.QueryRow(`SELECT state, current_node_id, switch_reason FROM access_profiles WHERE id = ?`, cfg.ID).Scan(&state, &currentNodeID, &switchReason); err != nil {
+	if err := reopened.store.DB.QueryRow(`SELECT state, current_node_id, switch_reason FROM access_profiles WHERE id = ?`, cfg.ID).Scan(&state, &currentNodeID, &switchReason); err != nil {
 		t.Fatal(err)
 	}
 	if state != "waiting_observation" || currentNodeID != "" || switchReason != "current_node_removed" {
 		t.Fatalf("repaired profile = state=%q current=%q reason=%q, want waiting_observation empty current_node_removed", state, currentNodeID, switchReason)
 	}
 	startup := latestMaintenanceRunByTypeForTest(t, reopened, maintenanceRunTypeStartup)
-	if intFromDetail(startup.detail()["repaired_profile_count"], 0) != 1 {
-		t.Fatalf("startup cleanup detail = %#v, want repaired_profile_count 1", startup.detail())
+	if intFromDetail(maintenanceRunDetail(startup)["repaired_profile_count"], 0) != 1 {
+		t.Fatalf("startup cleanup detail = %#v, want repaired_profile_count 1", maintenanceRunDetail(startup))
 	}
 	var runCount int
-	if err := reopened.db.QueryRow(`SELECT COUNT(*) FROM maintenance_runs WHERE run_type = ? AND target_id = ? AND trigger_source = 'current_node_observed'`, maintenanceTaskProfileEvaluation, cfg.ID).Scan(&runCount); err != nil {
+	if err := reopened.store.DB.QueryRow(`SELECT COUNT(*) FROM maintenance_runs WHERE run_type = ? AND target_id = ? AND trigger_source = 'current_node_observed'`, maintenanceTaskProfileEvaluation, cfg.ID).Scan(&runCount); err != nil {
 		t.Fatal(err)
 	}
 	if runCount != 1 {
@@ -538,7 +538,7 @@ func TestLogCleanupRunUsesIndependentRequestAndMaintenanceRetention(t *testing.T
 
 	g := NewForTest(t)
 	now := time.Now().UnixMilli()
-	if _, err := g.db.Exec(
+	if _, err := g.store.DB.Exec(
 		`INSERT INTO request_logs (id, ts, proxy_credential, access_profile, target_host, proxy_path, success)
 		 VALUES ('old_log', ?, 'cred', 'profile', 'old.example:443', 'direct', 0),
 		        ('new_log', ?, 'cred', 'profile', 'new.example:443', 'direct', 1)`,
@@ -551,10 +551,10 @@ func TestLogCleanupRunUsesIndependentRequestAndMaintenanceRetention(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.finishMaintenanceRun(oldRun.ID, maintenanceRunResultSuccess, maintenanceRunReasonCompleted, 0, oldRun.detail(), ""); err != nil {
+	if err := g.finishMaintenanceRun(oldRun.ID, maintenanceRunResultSuccess, maintenanceRunReasonCompleted, 0, maintenanceRunDetail(oldRun), ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.db.Exec(`UPDATE maintenance_runs SET created_at = ? WHERE id = ?`, now-secondsToMillis(3*86400), oldRun.ID); err != nil {
+	if _, err := g.store.DB.Exec(`UPDATE maintenance_runs SET created_at = ? WHERE id = ?`, now-secondsToMillis(3*86400), oldRun.ID); err != nil {
 		t.Fatal(err)
 	}
 	g.setKVSetting("log_retention_enabled", "true")
@@ -571,9 +571,9 @@ func TestLogCleanupRunUsesIndependentRequestAndMaintenanceRetention(t *testing.T
 	}
 
 	var oldLogCount, newLogCount, oldRunCount int
-	_ = g.db.QueryRow(`SELECT COUNT(*) FROM request_logs WHERE id = 'old_log'`).Scan(&oldLogCount)
-	_ = g.db.QueryRow(`SELECT COUNT(*) FROM request_logs WHERE id = 'new_log'`).Scan(&newLogCount)
-	_ = g.db.QueryRow(`SELECT COUNT(*) FROM maintenance_runs WHERE id = ?`, oldRun.ID).Scan(&oldRunCount)
+	_ = g.store.DB.QueryRow(`SELECT COUNT(*) FROM request_logs WHERE id = 'old_log'`).Scan(&oldLogCount)
+	_ = g.store.DB.QueryRow(`SELECT COUNT(*) FROM request_logs WHERE id = 'new_log'`).Scan(&newLogCount)
+	_ = g.store.DB.QueryRow(`SELECT COUNT(*) FROM maintenance_runs WHERE id = ?`, oldRun.ID).Scan(&oldRunCount)
 	if oldLogCount != 0 || newLogCount != 1 || oldRunCount != 0 {
 		t.Fatalf("cleanup counts oldLog=%d newLog=%d oldRun=%d, want 0/1/0", oldLogCount, newLogCount, oldRunCount)
 	}
@@ -581,7 +581,7 @@ func TestLogCleanupRunUsesIndependentRequestAndMaintenanceRetention(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	detail := finished.detail()
+	detail := maintenanceRunDetail(finished)
 	if detail["deleted_request_logs"] != float64(1) || detail["deleted_maintenance_runs"] != float64(1) {
 		t.Fatalf("cleanup detail = %#v, want deleted_request_logs=1 deleted_maintenance_runs=1", detail)
 	}
@@ -595,7 +595,7 @@ func TestLogCleanupRunRespectsRetentionCleanupSwitches(t *testing.T) {
 
 	g := NewForTest(t)
 	now := time.Now().UnixMilli()
-	if _, err := g.db.Exec(
+	if _, err := g.store.DB.Exec(
 		`INSERT INTO request_logs (id, ts, proxy_credential, access_profile, target_host, proxy_path, success)
 		 VALUES ('old_log', ?, 'cred', 'profile', 'old.example:443', 'direct', 0)`,
 		now-secondsToMillis(3*86400),
@@ -606,10 +606,10 @@ func TestLogCleanupRunRespectsRetentionCleanupSwitches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.finishMaintenanceRun(oldRun.ID, maintenanceRunResultSuccess, maintenanceRunReasonCompleted, 0, oldRun.detail(), ""); err != nil {
+	if err := g.finishMaintenanceRun(oldRun.ID, maintenanceRunResultSuccess, maintenanceRunReasonCompleted, 0, maintenanceRunDetail(oldRun), ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.db.Exec(`UPDATE maintenance_runs SET created_at = ? WHERE id = ?`, now-secondsToMillis(3*86400), oldRun.ID); err != nil {
+	if _, err := g.store.DB.Exec(`UPDATE maintenance_runs SET created_at = ? WHERE id = ?`, now-secondsToMillis(3*86400), oldRun.ID); err != nil {
 		t.Fatal(err)
 	}
 	g.setKVSetting("log_retention_enabled", "false")
@@ -626,8 +626,8 @@ func TestLogCleanupRunRespectsRetentionCleanupSwitches(t *testing.T) {
 	}
 
 	var oldLogCount, oldRunCount int
-	_ = g.db.QueryRow(`SELECT COUNT(*) FROM request_logs WHERE id = 'old_log'`).Scan(&oldLogCount)
-	_ = g.db.QueryRow(`SELECT COUNT(*) FROM maintenance_runs WHERE id = ?`, oldRun.ID).Scan(&oldRunCount)
+	_ = g.store.DB.QueryRow(`SELECT COUNT(*) FROM request_logs WHERE id = 'old_log'`).Scan(&oldLogCount)
+	_ = g.store.DB.QueryRow(`SELECT COUNT(*) FROM maintenance_runs WHERE id = ?`, oldRun.ID).Scan(&oldRunCount)
 	if oldLogCount != 1 || oldRunCount != 1 {
 		t.Fatalf("cleanup counts with switches off oldLog=%d oldRun=%d, want 1/1", oldLogCount, oldRunCount)
 	}
@@ -635,7 +635,7 @@ func TestLogCleanupRunRespectsRetentionCleanupSwitches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	detail := finished.detail()
+	detail := maintenanceRunDetail(finished)
 	if detail["deleted_request_logs"] != float64(0) || detail["deleted_maintenance_runs"] != float64(0) {
 		t.Fatalf("cleanup detail = %#v, want zero deletions", detail)
 	}
@@ -646,7 +646,7 @@ func TestLogCleanupRunRespectsRetentionCleanupSwitches(t *testing.T) {
 
 func insertMaintenanceRunTestNode(t *testing.T, g *Gateway, id, name string) {
 	t.Helper()
-	if _, err := g.db.Exec(
+	if _, err := g.store.DB.Exec(
 		`INSERT INTO nodes (id, fingerprint, name, type, created_at) VALUES (?, ?, ?, 'direct', ?)`,
 		id,
 		"fp-"+id,
@@ -657,9 +657,38 @@ func insertMaintenanceRunTestNode(t *testing.T, g *Gateway, id, name string) {
 	}
 }
 
+type maintenanceRunScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanMaintenanceRun(row maintenanceRunScanner) (maintenanceRunRecord, error) {
+	var run maintenanceRunRecord
+	var detailJSON string
+	err := row.Scan(
+		&run.ID,
+		&run.RunType,
+		&run.TriggerSource,
+		&run.TargetID,
+		&run.TargetLabel,
+		&run.State,
+		&run.Result,
+		&run.ReasonCode,
+		&run.TotalCount,
+		&run.FinishedCount,
+		&detailJSON,
+		&run.LastError,
+		&run.CreatedAt,
+		&run.StartedAt,
+		&run.FinishedAt,
+		&run.UpdatedAt,
+	)
+	run.Detail = parseJSONObject(detailJSON)
+	return run, err
+}
+
 func latestMaintenanceRunByTypeForTest(t *testing.T, g *Gateway, runType string) maintenanceRunRecord {
 	t.Helper()
-	run, err := scanMaintenanceRun(g.db.QueryRow(
+	run, err := scanMaintenanceRun(g.store.DB.QueryRow(
 		`SELECT id, run_type, trigger_source, target_id, target_label, state, result, reason_code,
 		        total_count, finished_count, detail_json, last_error, created_at, started_at, finished_at, updated_at
 		   FROM maintenance_runs
@@ -677,7 +706,7 @@ func latestMaintenanceRunByTypeForTest(t *testing.T, g *Gateway, runType string)
 func maintenanceRunCountByTypeForTest(t *testing.T, g *Gateway, runType string) int {
 	t.Helper()
 	var count int
-	if err := g.db.QueryRow(`SELECT COUNT(*) FROM maintenance_runs WHERE run_type = ?`, runType).Scan(&count); err != nil {
+	if err := g.store.DB.QueryRow(`SELECT COUNT(*) FROM maintenance_runs WHERE run_type = ?`, runType).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	return count
@@ -685,7 +714,7 @@ func maintenanceRunCountByTypeForTest(t *testing.T, g *Gateway, runType string) 
 
 func maintenanceRunByReasonForTest(t *testing.T, g *Gateway, reasonCode string) maintenanceRunRecord {
 	t.Helper()
-	run, err := scanMaintenanceRun(g.db.QueryRow(
+	run, err := scanMaintenanceRun(g.store.DB.QueryRow(
 		`SELECT id, run_type, trigger_source, target_id, target_label, state, result, reason_code,
 		        total_count, finished_count, detail_json, last_error, created_at, started_at, finished_at, updated_at
 		   FROM maintenance_runs
@@ -701,7 +730,7 @@ func maintenanceRunByReasonForTest(t *testing.T, g *Gateway, reasonCode string) 
 
 func startupCleanupRunWithCancelledCountForTest(t *testing.T, g *Gateway, cancelledCount int) maintenanceRunRecord {
 	t.Helper()
-	rows, err := g.db.Query(
+	rows, err := g.store.DB.Query(
 		`SELECT id, run_type, trigger_source, target_id, target_label, state, result, reason_code,
 		        total_count, finished_count, detail_json, last_error, created_at, started_at, finished_at, updated_at
 		   FROM maintenance_runs
@@ -717,7 +746,7 @@ func startupCleanupRunWithCancelledCountForTest(t *testing.T, g *Gateway, cancel
 		if err != nil {
 			t.Fatal(err)
 		}
-		if intFromDetail(run.detail()["cancelled_count"], -1) == cancelledCount {
+		if intFromDetail(maintenanceRunDetail(run)["cancelled_count"], -1) == cancelledCount {
 			return run
 		}
 	}
@@ -736,7 +765,7 @@ func (e deletingHTTP200Engine) DialNode(node nodeRecord, target string, timeouts
 		defer server.Close()
 		_, _ = http.ReadRequest(bufio.NewReader(server))
 		if e.g != nil && e.deleteNodeID != "" {
-			_, _ = e.g.db.Exec(`DELETE FROM nodes WHERE id = ?`, e.deleteNodeID)
+			_, _ = e.g.store.DB.Exec(`DELETE FROM nodes WHERE id = ?`, e.deleteNodeID)
 		}
 		_, _ = server.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"))
 	}()

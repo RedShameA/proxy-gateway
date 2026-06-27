@@ -54,3 +54,17 @@ func TestBuildDetailAppliesStableReadModelDefaults(t *testing.T) {
 		t.Fatalf("CandidateFilter.SourceMode = %q, want selected_sources", detail.CandidateFilter.SourceMode)
 	}
 }
+
+func TestBuildCandidateStatsWrapsDomainSemantics(t *testing.T) {
+	stats := BuildCandidateStats("chain", []string{"front_1", "exit_1", "front_2"}, 2, 1, []string{"exit_1", "exit_2"})
+
+	if stats.Total != 3 {
+		t.Fatalf("Total = %d, want 3", stats.Total)
+	}
+	if stats.Usable != 2 || stats.UnknownEgressCountry != 1 {
+		t.Fatalf("usable/unknown = %d/%d, want 2/1", stats.Usable, stats.UnknownEgressCountry)
+	}
+	if stats.FrontCandidates != 2 || stats.ExitNodes != 2 || stats.PathCombinations != 4 {
+		t.Fatalf("chain stats = %#v", stats)
+	}
+}

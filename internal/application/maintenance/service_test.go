@@ -114,8 +114,97 @@ func TestServiceClaimsNextQueuedRunAndListsByFilter(t *testing.T) {
 	}
 }
 
+func TestServiceClaimsQueuedRunsOfTypeWithLimit(t *testing.T) {
+	store := newMemoryRepository()
+	service := NewService(store, func(prefix string) (string, error) {
+		return prefix + "_unused", nil
+	}, millisClock(1000, 1100, 1200))
+	store.runs["run_one"] = Run{ID: "run_one", RunType: RunTypeNodeObservation, State: StateQueued}
+	store.runs["run_two"] = Run{ID: "run_two", RunType: RunTypeNodeObservation, State: StateQueued}
+	store.runs["run_other"] = Run{ID: "run_other", RunType: RunTypeProfileEvaluation, State: StateQueued}
+
+	claimed, err := service.ClaimQueuedRunsOfType(context.Background(), RunTypeNodeObservation, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("claimed len = %d, want 1", len(claimed))
+	}
+	if claimed[0].RunType != RunTypeNodeObservation || claimed[0].State != StateRunning {
+		t.Fatalf("claimed run = %#v", claimed[0])
+	}
+
+	remaining, err := service.ClaimQueuedRunsOfType(context.Background(), RunTypeNodeObservation, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 {
+		t.Fatalf("remaining claimed len = %d, want 1", len(remaining))
+	}
+	if store.runs["run_other"].State != StateQueued {
+		t.Fatalf("other run state = %q, want queued", store.runs["run_other"].State)
+	}
+}
+
+func TestServiceCancelsUnfinishedNodeObservationAggregateRuns(t *testing.T) {
+	store := newMemoryRepository()
+	service := NewService(store, func(prefix string) (string, error) {
+		return prefix + "_unused", nil
+	}, millisClock(5000, 6000))
+	store.runs["run_all"] = Run{
+		ID:            "run_all",
+		RunType:       RunTypeNodeObservation,
+		State:         StateQueued,
+		FinishedCount: 1,
+		Detail:        map[string]any{"target_scope": NodeObservationScopeAllNodes},
+	}
+	store.runs["run_due"] = Run{
+		ID:      "run_due",
+		RunType: RunTypeNodeObservation,
+		State:   StateRunning,
+		Detail:  map[string]any{"target_scope": NodeObservationScopeDueNodes},
+	}
+	store.runs["run_single"] = Run{
+		ID:      "run_single",
+		RunType: RunTypeNodeObservation,
+		State:   StateQueued,
+		Detail:  map[string]any{"target_scope": "single_node"},
+	}
+	store.runs["run_finished"] = Run{
+		ID:      "run_finished",
+		RunType: RunTypeNodeObservation,
+		State:   StateFinished,
+		Detail:  map[string]any{"target_scope": NodeObservationScopeAllNodes},
+	}
+
+	hasAggregate, err := service.HasUnfinishedNodeObservationAggregateRun(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasAggregate {
+		t.Fatal("expected unfinished aggregate node observation run")
+	}
+
+	if err := service.CancelUnfinishedNodeObservationAggregateRuns(context.Background(), "replaced_by_manual_run"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"run_all", "run_due"} {
+		run := store.runs[id]
+		if run.State != StateFinished || run.Result != ResultCancelled || run.ReasonCode != "replaced_by_manual_run" {
+			t.Fatalf("%s = %#v", id, run)
+		}
+	}
+	if store.runs["run_single"].State != StateQueued {
+		t.Fatalf("single run state = %q, want queued", store.runs["run_single"].State)
+	}
+	if store.runs["run_finished"].Result != "" {
+		t.Fatalf("finished aggregate should not be rewritten: %#v", store.runs["run_finished"])
+	}
+}
+
 type memoryRepository struct {
-	runs map[string]Run
+	runs         map[string]Run
+	repairResult DanglingProfileRepairResult
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -196,6 +285,43 @@ func (r *memoryRepository) List(_ context.Context, filter ListFilter) (ListResul
 		items = append(items, run)
 	}
 	return ListResult{Items: items, Total: len(items), Page: filter.Page, PageSize: filter.PageSize}, nil
+}
+
+func (r *memoryRepository) ListProfileEvents(_ context.Context, profileID string, limit int) ([]Run, error) {
+	var runs []Run
+	for _, run := range r.runs {
+		if run.TargetID == profileID && (run.RunType == "profile_evaluation" || run.RunType == "profile_switch") {
+			runs = append(runs, run)
+			if len(runs) >= limit {
+				break
+			}
+		}
+	}
+	return runs, nil
+}
+
+func (r *memoryRepository) ListUnfinished(_ context.Context, runType string) ([]Run, error) {
+	var runs []Run
+	for _, run := range r.runs {
+		if run.RunType == runType && run.State != StateFinished {
+			runs = append(runs, run)
+		}
+	}
+	return runs, nil
+}
+
+func (r *memoryRepository) ListActive(_ context.Context) ([]Run, error) {
+	var runs []Run
+	for _, run := range r.runs {
+		if run.State == StateQueued || run.State == StateRunning {
+			runs = append(runs, run)
+		}
+	}
+	return runs, nil
+}
+
+func (r *memoryRepository) RepairDanglingProfilePaths(_ context.Context, _ int64) (DanglingProfileRepairResult, error) {
+	return r.repairResult, nil
 }
 
 func millisClock(values ...int64) func() int64 {

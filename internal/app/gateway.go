@@ -1,34 +1,38 @@
 package app
 
 import (
-	"bufio"
 	"context"
 	"net"
 	"net/http"
 	"os"
-	"testing"
-	"time"
 
+	appadmin "proxygateway/internal/application/admin"
+	appproxy "proxygateway/internal/application/proxy"
 	geoipinfra "proxygateway/internal/infrastructure/geoip"
+	singboxinfra "proxygateway/internal/infrastructure/singbox"
 	storageinfra "proxygateway/internal/infrastructure/storage"
+	subscriptionfetch "proxygateway/internal/infrastructure/subscriptionfetch"
+	"proxygateway/internal/interfaces/entrypoint"
 
 	"go.uber.org/zap"
-)
-
-const (
-	entrypointSniffTimeout = 5 * time.Second
-	httpReadHeaderTimeout  = 10 * time.Second
 )
 
 type Option func(*options)
 
 type options struct {
-	logger *zap.Logger
+	logger                   *zap.Logger
+	disableMaintenanceRunner bool
 }
 
 func WithLogger(logger *zap.Logger) Option {
 	return func(options *options) {
 		options.logger = logger
+	}
+}
+
+func WithoutMaintenanceRunner() Option {
+	return func(options *options) {
+		options.disableMaintenanceRunner = true
 	}
 }
 
@@ -50,55 +54,74 @@ func New(dataDir string, opts ...Option) (*Gateway, error) {
 		logger.Error("open storage failed", zap.String("data_dir", dataDir), zap.Error(err))
 		return nil, err
 	}
-	db := store.DB
 	ctx, cancel := context.WithCancel(context.Background())
-	protocolEngine, err := newSingBoxNodeProtocolEngine()
+	protocolEngine, err := singboxinfra.NewNodeProtocolEngine()
 	if err != nil {
 		cancel()
-		_ = db.Close()
+		_ = store.Close()
 		logger.Error("create protocol engine failed", zap.Error(err))
 		return nil, err
 	}
 	g := &Gateway{
-		db:             db,
-		dbDialect:      store.Dialect,
-		dataDir:        dataDir,
-		protocolEngine: protocolEngine,
-		adminLogins:    newAdminLoginLimiter(),
-		ctx:            ctx,
-		cancel:         cancel,
-		logger:         logger.Named("gateway"),
+		store:               store,
+		txRunners:           storageinfra.NewTxRunners(store),
+		dataDir:             dataDir,
+		protocolEngine:      protocolEngine,
+		adminLogins:         appadmin.NewLoginLimiter(),
+		ctx:                 ctx,
+		cancel:              cancel,
+		logger:              logger.Named("gateway"),
+		subscriptionFetcher: subscriptionfetch.Fetch,
 	}
 	if err := g.migrate(); err != nil {
 		_ = protocolEngine.Close()
 		cancel()
-		_ = db.Close()
+		_ = store.Close()
 		logger.Error("database migration failed", zap.String("data_dir", dataDir), zap.Error(err))
 		return nil, err
 	}
+	repos, err := storageinfra.NewRepositories(store)
+	if err != nil {
+		_ = protocolEngine.Close()
+		cancel()
+		_ = store.Close()
+		logger.Error("create storage repositories failed", zap.String("data_dir", dataDir), zap.Error(err))
+		return nil, err
+	}
+	g.geoIPStatusRepo = repos.GeoIPStatus
+	g.kvSettingsRepo = repos.KVSettings
+	g.systemSettingsRepo = repos.SystemSettings
+	g.adminRepo = repos.Admin
+	g.maintenanceAuxRepo = repos.MaintenanceAux
+	g.maintenanceRunRepo = repos.MaintenanceRun
+	g.overviewRepo = repos.Overview
+	g.dictionaryRepo = repos.Dictionary
+	g.nodeRepo = repos.Node
+	g.nodeObservationRepo = repos.NodeObservation
+	g.evaluationRepo = repos.Evaluation
+	g.requestLogRepo = repos.RequestLog
+	g.proxyCredentialRepo = repos.ProxyCredential
+	g.profileConfigRepo = repos.ProfileConfig
+	g.profileCredentialRepo = repos.ProfileCredential
+	g.subscriptionRepo = repos.Subscription
 	if err := g.cancelExpiredMaintenanceRunsOnStartup(); err != nil {
 		_ = protocolEngine.Close()
 		cancel()
-		_ = db.Close()
+		_ = store.Close()
 		logger.Error("startup cleanup failed", zap.String("data_dir", dataDir), zap.Error(err))
 		return nil, err
 	}
-	g.geoIP = geoipinfra.NewService(dataDir, db)
+	g.geoIP = geoipinfra.NewService(dataDir, g.geoIPStatusRepo)
 	g.geoIP.LoadExisting()
-	g.maintenance = newMaintenanceRunner(g)
-	g.requestLogs = newRequestLogWriter(db, g.logger.Named("request_log_writer"))
+	if !config.disableMaintenanceRunner {
+		g.maintenance = newMaintenanceRunner(g)
+	}
+	g.requestLogs = appproxy.NewRequestLogWriter(g.requestLogRepo, g.logger.Named("request_log_writer"))
+	g.requestLogService = appproxy.NewRequestLogService(g.requestLogs, func() (string, error) {
+		return prefixedID("log")
+	}, g.logger.Named("request_log"))
 	g.log().Info("gateway initialized", zap.String("data_dir", dataDir))
 	return g, nil
-}
-
-func NewForTest(t testing.TB) *Gateway {
-	t.Helper()
-	g, err := New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = g.Close() })
-	return g
 }
 
 func (g *Gateway) Close() error {
@@ -120,15 +143,13 @@ func (g *Gateway) Close() error {
 			}
 		}
 		if g.requestLogs != nil {
-			if ok := g.requestLogs.close(requestLogFlushTimeout); !ok {
-				g.log().Warn("request log writer close timed out", zap.Duration("timeout", requestLogFlushTimeout))
+			if ok := g.requestLogs.Close(appproxy.RequestLogFlushTimeout); !ok {
+				g.log().Warn("request log writer close timed out", zap.Duration("timeout", appproxy.RequestLogFlushTimeout))
 			}
 		}
-		if g.db != nil {
-			if closeErr := g.db.Close(); closeErr != nil && err == nil {
-				err = closeErr
-				g.log().Error("close database failed", zap.Error(closeErr))
-			}
+		if closeErr := g.store.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			g.log().Error("close database failed", zap.Error(closeErr))
 		}
 	})
 	return err
@@ -138,6 +159,10 @@ func (g *Gateway) Serve(ln net.Listener) error {
 	if g.maintenance != nil {
 		g.maintenance.start()
 	}
+	handler := entrypoint.Handler{
+		HTTP:   g.Handler(),
+		SOCKS5: g.handleSOCKS5Conn,
+	}
 	g.log().Info("gateway accepting connections", zap.String("addr", ln.Addr().String()))
 	for {
 		conn, err := ln.Accept()
@@ -145,61 +170,17 @@ func (g *Gateway) Serve(ln net.Listener) error {
 			g.log().Error("listener accept failed", zap.Error(err))
 			return err
 		}
-		go g.serveEntrypointConn(conn)
+		go handler.ServeConn(conn)
 	}
-}
-
-func (g *Gateway) serveEntrypointConn(conn net.Conn) {
-	_ = conn.SetReadDeadline(time.Now().Add(entrypointSniffTimeout))
-	reader := bufio.NewReader(conn)
-	first, err := reader.Peek(1)
-	if err != nil {
-		_ = conn.Close()
-		return
-	}
-	_ = conn.SetReadDeadline(time.Time{})
-	buffered := &bufferedConn{Conn: conn, reader: reader}
-	if first[0] == 0x05 {
-		g.handleSOCKS5Conn(buffered)
-		return
-	}
-	server := &http.Server{
-		Handler:           g.Handler(),
-		ReadHeaderTimeout: httpReadHeaderTimeout,
-	}
-	_ = server.Serve(&singleConnListener{conn: buffered})
 }
 
 func (g *Gateway) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/system/setup-status", g.handleSetupStatus)
-	mux.HandleFunc("/api/admin/setup", g.handleAdminSetup)
-	mux.HandleFunc("/api/admin/login", g.handleAdminLogin)
-	mux.HandleFunc("/api/admin/me", g.handleAdminMe)
-	mux.HandleFunc("/api/subscriptions", g.handleSubscriptions)
-	mux.HandleFunc("/api/subscriptions/", g.handleSubscriptionSubroutes)
-	mux.HandleFunc("/api/nodes", g.handleNodes)
-	mux.HandleFunc("/api/nodes/", g.handleNodeSubroutes)
-	mux.HandleFunc("/api/nodes/observations/run", g.handleRunNodeObservations)
-	mux.HandleFunc("/api/access-profiles", g.handleAccessProfiles)
-	mux.HandleFunc("/api/access-profiles/", g.handleAccessProfileSubroutes)
-	mux.HandleFunc("/api/evaluation-settings", g.handleEvaluationSettings)
-	mux.HandleFunc("/api/maintenance/runs", g.handleMaintenanceRuns)
-	mux.HandleFunc("/api/maintenance/runs/", g.handleMaintenanceRunDetail)
-	mux.HandleFunc("/api/maintenance/settings", g.handleMaintenanceSettings)
-	mux.HandleFunc("/api/geoip", g.handleGeoIPStatus)
-	mux.HandleFunc("/api/evaluations/run", g.handleRunEvaluations)
-	mux.HandleFunc("/api/request-logs", g.handleRequestLogs)
-	mux.HandleFunc("/api/overview", g.handleOverview)
-	mux.HandleFunc("/api/dictionaries/egress-countries", g.handleEgressCountries)
-	mux.HandleFunc("/api/system/settings", g.handleSystemSettings)
-	mux.HandleFunc("/api/admin/password", g.handleAdminPassword)
-	mux.HandleFunc("/", g.handleWebUI)
+	api := g.httpAPIHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodConnect || r.URL.IsAbs() {
 			g.handleHTTPProxy(w, r)
 			return
 		}
-		mux.ServeHTTP(w, r)
+		api.ServeHTTP(w, r)
 	})
 }

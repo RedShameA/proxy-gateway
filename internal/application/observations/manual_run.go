@@ -43,7 +43,7 @@ func PlanManualRun(repo ManualRunRepository, command ManualRunCommand) (ManualRu
 			return ManualRunPlan{}, ErrObservationTargetNotFound
 		}
 		return ManualRunPlan{
-			Scope:    "single_node",
+			Scope:    ScopeSingleNode,
 			ProbeURL: effectiveProbeURL(command),
 			Targets:  []NodeTarget{target},
 		}, nil
@@ -59,7 +59,7 @@ func PlanManualRun(repo ManualRunRepository, command ManualRunCommand) (ManualRu
 			return ManualRunPlan{}, ErrObservationTargetNotFound
 		}
 		return ManualRunPlan{
-			Scope:    "single_node",
+			Scope:    ScopeSingleNode,
 			ProbeURL: effectiveProbeURL(command),
 			Targets:  []NodeTarget{target},
 		}, nil
@@ -85,7 +85,7 @@ func PlanManualRun(repo ManualRunRepository, command ManualRunCommand) (ManualRu
 	}
 
 	return ManualRunPlan{
-		Scope:                         "all_nodes",
+		Scope:                         ScopeAllNodes,
 		ProbeURL:                      effectiveProbeURL(command),
 		Targets:                       targets,
 		CancelUnfinishedAggregateRuns: true,
@@ -93,12 +93,7 @@ func PlanManualRun(repo ManualRunRepository, command ManualRunCommand) (ManualRu
 }
 
 func effectiveProbeURL(command ManualRunCommand) string {
-	for _, value := range []string{command.ProbeURL, command.LegacyTestURL, command.DefaultProbeURL} {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
+	return EffectiveProbeURL(command.ProbeURL, command.LegacyTestURL, command.DefaultProbeURL)
 }
 
 func normalizeStringList(values []string) []string {

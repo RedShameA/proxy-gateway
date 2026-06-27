@@ -2,6 +2,7 @@ package maintenance
 
 import (
 	"context"
+	"errors"
 	"strings"
 )
 
@@ -13,7 +14,12 @@ const (
 	ResultSuccess = "success"
 
 	ReasonCompleted = "completed"
+
+	NodeObservationScopeAllNodes = "all_nodes"
+	NodeObservationScopeDueNodes = "due_nodes"
 )
+
+var ErrRunNotFound = errors.New("maintenance run not found")
 
 type Run struct {
 	ID            string
@@ -78,6 +84,17 @@ type ListResult struct {
 	PageSize int
 }
 
+type DanglingProfileRepairResult struct {
+	RepairedCount  int
+	InvalidCount   int
+	EvaluationRefs []ProfileEvaluationRef
+}
+
+type ProfileEvaluationRef struct {
+	ID   string
+	Name string
+}
+
 type Repository interface {
 	Insert(ctx context.Context, run Run) error
 	Load(ctx context.Context, id string) (Run, error)
@@ -86,6 +103,10 @@ type Repository interface {
 	Finish(ctx context.Context, update FinishUpdate) error
 	ClaimNext(ctx context.Context, runType string, nowMillis int64) (Run, bool, error)
 	List(ctx context.Context, filter ListFilter) (ListResult, error)
+	ListProfileEvents(ctx context.Context, profileID string, limit int) ([]Run, error)
+	ListUnfinished(ctx context.Context, runType string) ([]Run, error)
+	ListActive(ctx context.Context) ([]Run, error)
+	RepairDanglingProfilePaths(ctx context.Context, nowMillis int64) (DanglingProfileRepairResult, error)
 }
 
 type IDGenerator func(prefix string) (string, error)
@@ -173,6 +194,24 @@ func (s *Service) ClaimNext(ctx context.Context, runType string) (Run, bool, err
 	return s.repo.ClaimNext(ctx, runType, s.now())
 }
 
+func (s *Service) ClaimQueuedRunsOfType(ctx context.Context, runType string, limit int) ([]Run, error) {
+	if limit <= 0 {
+		limit = 1
+	}
+	runs := make([]Run, 0, limit)
+	for i := 0; i < limit; i++ {
+		run, ok, err := s.ClaimNext(ctx, runType)
+		if err != nil {
+			return runs, err
+		}
+		if !ok {
+			break
+		}
+		runs = append(runs, run)
+	}
+	return runs, nil
+}
+
 func (s *Service) List(ctx context.Context, filter ListFilter) (ListResult, error) {
 	if filter.Page <= 0 {
 		filter.Page = 1
@@ -181,6 +220,66 @@ func (s *Service) List(ctx context.Context, filter ListFilter) (ListResult, erro
 		filter.PageSize = 10
 	}
 	return s.repo.List(ctx, filter)
+}
+
+func (s *Service) ListProfileEvents(ctx context.Context, profileID string, limit int) ([]Run, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	return s.repo.ListProfileEvents(ctx, strings.TrimSpace(profileID), limit)
+}
+
+func (s *Service) ListUnfinished(ctx context.Context, runType string) ([]Run, error) {
+	return s.repo.ListUnfinished(ctx, strings.TrimSpace(runType))
+}
+
+func (s *Service) ListActive(ctx context.Context) ([]Run, error) {
+	return s.repo.ListActive(ctx)
+}
+
+func (s *Service) CancelUnfinishedNodeObservationAggregateRuns(ctx context.Context, reasonCode string) error {
+	runs, err := s.ListUnfinished(ctx, RunTypeNodeObservation)
+	if err != nil {
+		return err
+	}
+	for _, run := range runs {
+		if !IsNodeObservationAggregateRun(run) {
+			continue
+		}
+		if err := s.Finish(ctx, FinishCommand{
+			ID:            run.ID,
+			Result:        ResultCancelled,
+			ReasonCode:    reasonCode,
+			FinishedCount: run.FinishedCount,
+			Detail:        RunDetail(run),
+			LastError:     run.LastError,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) HasUnfinishedNodeObservationAggregateRun(ctx context.Context) (bool, error) {
+	runs, err := s.ListUnfinished(ctx, RunTypeNodeObservation)
+	if err != nil {
+		return false, err
+	}
+	for _, run := range runs {
+		if IsNodeObservationAggregateRun(run) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *Service) RepairDanglingProfilePaths(ctx context.Context) (DanglingProfileRepairResult, error) {
+	return s.repo.RepairDanglingProfilePaths(ctx, s.now())
+}
+
+func IsNodeObservationAggregateRun(run Run) bool {
+	scope, _ := RunDetail(run)["target_scope"].(string)
+	return scope == NodeObservationScopeAllNodes || scope == NodeObservationScopeDueNodes
 }
 
 func copyDetail(detail map[string]any) map[string]any {

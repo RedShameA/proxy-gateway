@@ -2,15 +2,14 @@ package app_test
 
 import (
 	"net/http/httptest"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
-
-	"proxygateway/internal/app"
 )
 
 func TestManualNodeImportEnqueuesObservationRun(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

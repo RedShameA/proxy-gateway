@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"net/http"
 	"strings"
 )
 
@@ -31,44 +30,11 @@ func tokenHash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func readJSON(r *http.Request, out any) error {
-	defer r.Body.Close()
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	return dec.Decode(out)
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
-}
-
 func boolInt(value bool) int {
 	if value {
 		return 1
 	}
 	return 0
-}
-
-func parsePagination(r *http.Request) (page, pageSize int) {
-	page = 1
-	pageSize = 10
-	if v := r.URL.Query().Get("page"); v != "" {
-		if n := parseInt(v); n > 0 {
-			page = n
-		}
-	}
-	if v := r.URL.Query().Get("page_size"); v != "" {
-		if n := parseInt(v); n > 0 && n <= 100 {
-			pageSize = n
-		}
-	}
-	return page, pageSize
 }
 
 func parseInt(s string) int {
@@ -81,6 +47,15 @@ func parseInt(s string) int {
 		}
 	}
 	return n
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func unmarshalStringSlice(raw string) []string {

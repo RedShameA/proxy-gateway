@@ -9,7 +9,9 @@ import (
 
 	"net/http/httptest"
 	"proxygateway/internal/app"
+	singboxinfra "proxygateway/internal/infrastructure/singbox"
 	sqliteinfra "proxygateway/internal/infrastructure/sqlite"
+	"proxygateway/internal/testsupport/apptest"
 )
 
 func TestRemainingSingBoxProtocolsImportAndNormalize(t *testing.T) {
@@ -311,7 +313,7 @@ surge-hy2 = hy2, 127.0.0.1, 20403, password=hy2-secret, sni=hy2.example, ports=2
 func TestRemainingProtocolOutboundJSONDeduplicatesEquivalentSources(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -365,7 +367,7 @@ func TestRemainingProtocolFixedProfileRecordsDialFailure(t *testing.T) {
 	}))
 	t.Cleanup(target.Close)
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -444,12 +446,7 @@ func readNodeOutboundJSONByName(t *testing.T, dataDir, name string) string {
 
 func assertRuntimeOutboundParses(t *testing.T, outboundJSON string) {
 	t.Helper()
-	builder, err := app.NewSingBoxOutboundBuilderForTest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = builder.Close() })
-	if err := builder.ParseForTest(outboundJSON); err != nil {
+	if err := singboxinfra.ValidateOutboundJSON(outboundJSON); err != nil {
 		t.Fatalf("runtime outbound parse failed: %v; outbound_json=%s", err, outboundJSON)
 	}
 }

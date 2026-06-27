@@ -4,15 +4,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	probinginfra "proxygateway/internal/infrastructure/probing"
+	proxyiface "proxygateway/internal/interfaces/proxy"
 	"testing"
 	"time"
 )
-
-func TestExternalHTTPClientHasTimeout(t *testing.T) {
-	if externalHTTPClient.Timeout <= 0 {
-		t.Fatal("externalHTTPClient must have a timeout")
-	}
-}
 
 func TestObserveNodeAppliesProbeDeadlineAfterDial(t *testing.T) {
 	probe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,11 +67,11 @@ func TestFetchTestURLThroughChainAppliesProbeDeadlineAfterDial(t *testing.T) {
 
 func TestProxyTargetHelpersAddDefaultPortForIPv6(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://[2001:db8::1]/demo", nil)
-	if got, want := absoluteProxyURLTargetHost(req), "[2001:db8::1]:80"; got != want {
+	if got, want := proxyiface.AbsoluteProxyURLTargetHost(req), "[2001:db8::1]:80"; got != want {
 		t.Fatalf("absoluteProxyURLTargetHost = %q, want %q", got, want)
 	}
 
-	outbound, err := buildOutboundGETRequest("https://[2001:db8::2]/probe")
+	outbound, err := probinginfra.BuildOutboundGETRequest("https://[2001:db8::2]/probe")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,16 +6,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
 	"time"
-
-	"proxygateway/internal/app"
 )
 
 func TestAccessProfileDetailAndOverviewDoNotDeadlockWithSingleDBConnection(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	handler := gw.Handler()
 	doJSON := func(method, target, token string, body any) *httptest.ResponseRecorder {
 		t.Helper()
@@ -109,7 +108,7 @@ func TestAccessProfileDetailAndOverviewDoNotDeadlockWithSingleDBConnection(t *te
 func TestAccessProfileCanBeEditedAndDeleted(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -197,7 +196,7 @@ func TestAccessProfileCanBeEditedAndDeleted(t *testing.T) {
 func TestAccessProfileRejectsInvalidNameFilterRegex(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -221,7 +220,7 @@ func TestAccessProfileRejectsInvalidNameFilterRegex(t *testing.T) {
 func TestAccessProfileSummariesExposeSwitchReason(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -280,7 +279,7 @@ func TestProxyCredentialsCanBeListedAndDeleted(t *testing.T) {
 	}))
 	t.Cleanup(target.Close)
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

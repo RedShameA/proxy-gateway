@@ -43,6 +43,18 @@ type CandidateStats struct {
 	PathCombinations     int `json:"path_combinations"`
 }
 
+func BuildCandidateStats(profileType string, candidateNodeIDs []string, usableCount, unknownEgressCountryCount int, exitNodeIDs []string) CandidateStats {
+	stats := domainprofile.BuildCandidateStats(profileType, candidateNodeIDs, usableCount, unknownEgressCountryCount, exitNodeIDs)
+	return CandidateStats{
+		Total:                stats.Total,
+		Usable:               stats.Usable,
+		UnknownEgressCountry: stats.UnknownEgressCountry,
+		FrontCandidates:      stats.FrontCandidates,
+		ExitNodes:            stats.ExitNodes,
+		PathCombinations:     stats.PathCombinations,
+	}
+}
+
 type CandidateFilter struct {
 	SourceMode        string   `json:"source_mode"`
 	SourceIDs         []string `json:"source_ids"`

@@ -6,6 +6,7 @@ import (
 
 	"github.com/pressly/goose/v3"
 
+	applicationnodes "proxygateway/internal/application/nodes"
 	databaseinfra "proxygateway/internal/infrastructure/database"
 )
 
@@ -29,7 +30,10 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	}); err != nil {
 		return err
 	}
-	return closeInterruptedRequestLogs(db)
+	if err := closeInterruptedRequestLogs(db); err != nil {
+		return err
+	}
+	return backfillNodeOutboundJSON(ctx, db)
 }
 
 func configure(db *sql.DB) error {
@@ -385,6 +389,61 @@ func reconcileSchema(db schemaExecutor) error {
 		return err
 	}
 	return ensureRequestLogsSchema(db)
+}
+
+func backfillNodeOutboundJSON(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `SELECT id, name, type, server, server_port, username, password, outbound_json FROM nodes ORDER BY created_at, id`)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id           string
+		node         applicationnodes.OutboundNode
+		outboundJSON string
+	}
+	var nodes []row
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(
+			&item.id,
+			&item.node.Name,
+			&item.node.Type,
+			&item.node.Server,
+			&item.node.ServerPort,
+			&item.node.Username,
+			&item.node.Password,
+			&item.outboundJSON,
+		); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		item.node.OutboundJSON = item.outboundJSON
+		nodes = append(nodes, item)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, item := range nodes {
+		outboundJSON, err := applicationnodes.NormalizeOutboundJSON(item.node)
+		if err != nil {
+			return err
+		}
+		_, err = db.ExecContext(
+			ctx,
+			`UPDATE nodes SET outbound_json = ?, fingerprint = ? WHERE id = ?`,
+			outboundJSON,
+			applicationnodes.OutboundFingerprint(outboundJSON),
+			item.id,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureColumn(db schemaExecutor, table, column, definition string) error {

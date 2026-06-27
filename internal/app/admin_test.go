@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"proxygateway/internal/app"
 	sqliteinfra "proxygateway/internal/infrastructure/sqlite"
+	"proxygateway/internal/testsupport/apptest"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,7 @@ import (
 func TestFirstRunAdminCredentialFlow(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 
@@ -76,7 +77,7 @@ func TestFirstRunAdminCredentialFlow(t *testing.T) {
 func TestAdminPasswordChangeInvalidatesAllSessions(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	firstToken := setupAdmin(t, srv.URL)
@@ -146,7 +147,7 @@ func TestAdminSessionExpires(t *testing.T) {
 func TestAdminLoginRateLimit(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	setupAdmin(t, srv.URL)

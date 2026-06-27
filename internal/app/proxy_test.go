@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"proxygateway/internal/app"
 	sqliteinfra "proxygateway/internal/infrastructure/sqlite"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
 	"time"
 )
@@ -27,7 +28,7 @@ func TestManualNodeCanServeFixedNodeHTTPProxyPath(t *testing.T) {
 	}
 
 	upstreamProxy := newHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 
@@ -88,7 +89,7 @@ func TestManualNodeCanServeFixedNodeHTTPProxyPath(t *testing.T) {
 func TestHTTPProxyRejectsInvalidProxyCredential(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -146,7 +147,7 @@ func TestHTTPProxyUsesProxyAuthorizationNotTargetAuthorization(t *testing.T) {
 	}))
 	t.Cleanup(target.Close)
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -284,7 +285,7 @@ func TestProxyCredentialLastUsedAtIsThrottled(t *testing.T) {
 func TestHTTPProxyRequestLogsFailureStages(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -370,7 +371,7 @@ func TestHTTPProxyRequestLogRecordsUpstreamFailureStage(t *testing.T) {
 	t.Parallel()
 
 	brokenUpstream := newBrokenHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -410,7 +411,7 @@ func TestSOCKS5ConnectUsesExistingAccessProfile(t *testing.T) {
 	}
 
 	upstreamProxy := newHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -474,7 +475,7 @@ func TestSOCKS5ConnectUsesExistingAccessProfile(t *testing.T) {
 func TestSOCKS5BindAndUDPAssociateReturnFailure(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -543,7 +544,7 @@ func TestProxyRequestLogsMetadataWithoutBodies(t *testing.T) {
 	}
 
 	upstreamProxy := newHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -628,7 +629,7 @@ func TestSOCKS5ProxyRequestLogsMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -744,7 +745,7 @@ func TestSOCKS5ProxyRequestLogShowsRunningWhileTunnelOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

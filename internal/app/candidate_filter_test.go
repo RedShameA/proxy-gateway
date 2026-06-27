@@ -4,16 +4,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
 	"time"
-
-	"proxygateway/internal/app"
 )
 
 func TestChainAccessProfileCandidateStatsExcludeExitNodesFromFrontCandidates(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -56,7 +55,7 @@ func TestChainAccessProfileCandidateStatsExcludeExitNodesFromFrontCandidates(t *
 func TestCountryFilteredAccessProfileEnqueuesObservationForUnknownCandidates(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -111,7 +110,7 @@ func TestChainCandidateFilterAppliesOnlyToFrontNodes(t *testing.T) {
 	exitProxy := newDelayedHTTPConnectProxy(t, 0)
 	frontHTTP := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
 	frontSOCKS := newDelayedSOCKS5Proxy(t, 0)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

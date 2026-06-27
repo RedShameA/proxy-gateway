@@ -58,6 +58,12 @@ type Summary struct {
 	SwitchReason                 string   `json:"switch_reason"`
 }
 
+type SummaryList struct {
+	Items          []Summary `json:"items"`
+	AccessProfiles []Summary `json:"access_profiles"`
+	Total          int       `json:"total"`
+}
+
 func BuildSummary(input SummaryInput) Summary {
 	profileIdentifier := input.ProfileIdentifier
 	if profileIdentifier == "" {
@@ -90,6 +96,17 @@ func BuildSummary(input SummaryInput) Summary {
 		LastEvaluatedAt:              nullableUnixMillis(input.LastEvaluatedAt),
 		LastError:                    input.LastError,
 		SwitchReason:                 input.SwitchReason,
+	}
+}
+
+func BuildSummaryList(items []Summary, total int) SummaryList {
+	if items == nil {
+		items = []Summary{}
+	}
+	return SummaryList{
+		Items:          items,
+		AccessProfiles: items,
+		Total:          total,
 	}
 }
 

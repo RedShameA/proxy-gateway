@@ -1,45 +1,63 @@
 package app
 
 import (
-	"bufio"
 	"context"
-	"database/sql"
-	"encoding/json"
-	"net"
 	"sync"
-	"time"
 
-	databaseinfra "proxygateway/internal/infrastructure/database"
+	appadmin "proxygateway/internal/application/admin"
+	appdictionaries "proxygateway/internal/application/dictionaries"
+	appevaluations "proxygateway/internal/application/evaluations"
+	appgeoip "proxygateway/internal/application/geoip"
+	appmaintenance "proxygateway/internal/application/maintenance"
+	appnodes "proxygateway/internal/application/nodes"
+	appobservations "proxygateway/internal/application/observations"
+	appoverview "proxygateway/internal/application/overview"
+	appprofiles "proxygateway/internal/application/profiles"
+	appproxy "proxygateway/internal/application/proxy"
+	appsettings "proxygateway/internal/application/settings"
+	appsubscriptions "proxygateway/internal/application/subscriptions"
+	domainprofile "proxygateway/internal/domain/profile"
 	geoipinfra "proxygateway/internal/infrastructure/geoip"
+	storageinfra "proxygateway/internal/infrastructure/storage"
 
 	"go.uber.org/zap"
 )
 
 type Gateway struct {
-	db             *sql.DB
-	dbDialect      databaseinfra.Dialect
-	dataDir        string
-	protocolEngine nodeProtocolEngine
-	geoIP          *geoipinfra.Service
-	maintenance    *maintenanceRunner
-	requestLogs    *requestLogWriter
-	adminLogins    *adminLoginLimiter
-	ctx            context.Context
-	cancel         context.CancelFunc
-	closeOnce      sync.Once
-	logger         *zap.Logger
+	store                 storageinfra.Handle
+	txRunners             storageinfra.TxRunners
+	dataDir               string
+	protocolEngine        nodeProtocolEngine
+	geoIP                 *geoipinfra.Service
+	geoIPStatusRepo       appgeoip.StatusRepository
+	maintenance           *maintenanceRunner
+	maintenanceAuxRepo    appmaintenance.AuxiliaryRepository
+	maintenanceRunRepo    appmaintenance.Repository
+	overviewRepo          appoverview.Repository
+	dictionaryRepo        appdictionaries.Repository
+	nodeRepo              appnodes.Repository
+	nodeObservationRepo   appobservations.PersistenceRepository
+	evaluationRepo        appevaluations.Repository
+	requestLogs           *appproxy.RequestLogWriter
+	requestLogService     *appproxy.RequestLogService
+	requestLogRepo        appproxy.RequestLogRepository
+	proxyCredentialRepo   appproxy.CredentialRepository
+	profileConfigRepo     appprofiles.ConfigRepository
+	profileCredentialRepo appprofiles.CredentialRepository
+	subscriptionRepo      appsubscriptions.Repository
+	subscriptionFetcher   appsubscriptions.ContentFetcher
+	kvSettingsRepo        appsettings.KVRepository
+	systemSettingsRepo    appsettings.SystemRepository
+	adminRepo             appadmin.Repository
+	adminLogins           *appadmin.LoginLimiter
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	closeOnce             sync.Once
+	logger                *zap.Logger
 }
 
-type nodeProtocolEngine interface {
-	DialNode(node nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error)
-	DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error)
-}
-
-type closeableNodeProtocolEngine interface {
-	nodeProtocolEngine
-	Close() error
-	InvalidateFingerprint(fingerprint string)
-}
+type nodeProtocolEngine = appproxy.NodeProtocolEngine
+type closeableNodeProtocolEngine = appproxy.CloseableNodeProtocolEngine
 
 type geoIPCountryService interface {
 	LookupCountry(ip string) string
@@ -47,39 +65,10 @@ type geoIPCountryService interface {
 	Close()
 }
 
-type dialTimeouts struct {
-	ConnectTimeout time.Duration
-	Deadline       time.Time
-}
-
-type nodeRecord struct {
-	ID           string
-	Name         string
-	Type         string
-	Server       string
-	ServerPort   int
-	Username     string
-	Password     string
-	RawJSON      string
-	OutboundJSON string
-	Enabled      bool
-}
-
-type proxyCredentialRecord struct {
-	ID        string
-	Remark    string
-	ProfileID string
-}
-
-type selectedProxyPath struct {
-	Credential        proxyCredentialRecord
-	ProfileID         string
-	Profile           string
-	ProfileIdentifier string
-	Node              nodeRecord
-	FrontNode         nodeRecord
-	ExitNode          nodeRecord
-}
+type dialTimeouts = appproxy.DialTimeouts
+type nodeRecord = appproxy.Node
+type proxyCredentialRecord = appproxy.CredentialRecord
+type selectedProxyPath = appproxy.SelectedPath
 
 type evaluationSettings struct {
 	GlobalConcurrency                   int `json:"global_concurrency"`
@@ -103,84 +92,8 @@ type maintenanceSettings struct {
 	GeoIPConcurrency             int    `json:"geoip_concurrency"`
 }
 
-type profileEvaluationTarget struct {
-	ID                           string
-	Type                         string
-	FixedNodeID                  string
-	ExitNodeIDs                  []string
-	ChainEvaluationMode          string
-	TestURL                      string
-	Filter                       candidateFilter
-	CandidateLimit               int
-	MinEvaluationIntervalSeconds int
-	RelativeImprovementThreshold float64
-	AbsoluteImprovementMS        int
-	LastEvaluatedAt              int64
-	ConfigVersion                int64
-	ForceSwitch                  bool
-	AutoEvaluationEnabled        bool
-	NodeStickyEnabled            bool
-}
+type profileEvaluationTarget = appevaluations.Target
 
-type parsedSubscriptionNode struct {
-	Name          string
-	Type          string
-	Server        string
-	ServerPort    int
-	Method        string
-	UUID          string
-	Flow          string
-	Security      string
-	AlterID       int
-	TLSJSON       json.RawMessage
-	TransportJSON json.RawMessage
-	Username      string
-	Password      string
-	RawJSON       string
-	OutboundJSON  string
-}
+type parsedSubscriptionNode = appsubscriptions.ParsedNode
 
-type candidateFilter struct {
-	EgressCountry     string
-	EgressCountries   []string
-	EgressCountryMode string
-	NodeSourceMode    string
-	SourceIDs         []string
-	Protocols         []string
-	NameIncludeRegex  string
-	NameExcludeRegex  string
-	ManualOnly        bool
-}
-
-type bufferedConn struct {
-	net.Conn
-	reader *bufio.Reader
-}
-
-func (c *bufferedConn) Read(p []byte) (int, error) {
-	return c.reader.Read(p)
-}
-
-type singleConnListener struct {
-	conn net.Conn
-	done bool
-}
-
-func (l *singleConnListener) Accept() (net.Conn, error) {
-	if l.done {
-		return nil, net.ErrClosed
-	}
-	l.done = true
-	return l.conn, nil
-}
-
-func (l *singleConnListener) Close() error {
-	if l.conn != nil && !l.done {
-		return l.conn.Close()
-	}
-	return nil
-}
-
-func (l *singleConnListener) Addr() net.Addr {
-	return l.conn.LocalAddr()
-}
+type candidateFilter = domainprofile.CandidateFilter

@@ -3,16 +3,15 @@ package app_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
 	"time"
-
-	"proxygateway/internal/app"
 )
 
 func TestSystemSettingsGet(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 
@@ -58,7 +57,7 @@ func TestSystemSettingsGet(t *testing.T) {
 func TestSystemSettingsGeoIPStatusIncludesSourceAndNextUpdate(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	token := setupAdmin(t, srv.URL)
@@ -95,7 +94,7 @@ func TestSystemSettingsGeoIPStatusIncludesSourceAndNextUpdate(t *testing.T) {
 func TestSystemSettingsPatchScanAndEvaluationSettings(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	token := setupAdmin(t, srv.URL)
@@ -144,7 +143,7 @@ func TestSystemSettingsPatchScanAndEvaluationSettings(t *testing.T) {
 func TestSystemSettingsPatchRetentionCleanupSettings(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	token := setupAdmin(t, srv.URL)
@@ -174,7 +173,7 @@ func TestSystemSettingsPatchRetentionCleanupSettings(t *testing.T) {
 func TestSystemSettingsValidatesPublicProxyEndpoint(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	token := setupAdmin(t, srv.URL)
@@ -209,7 +208,7 @@ func TestSystemSettingsValidatesPublicProxyEndpoint(t *testing.T) {
 func TestSystemSettingsRequiresAuth(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 
@@ -223,7 +222,7 @@ func TestSystemSettingsRequiresAuth(t *testing.T) {
 func TestAdminPasswordChange(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 
@@ -269,7 +268,7 @@ func TestAdminPasswordChange(t *testing.T) {
 func TestEgressCountriesEndpoint(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 

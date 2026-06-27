@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"proxygateway/internal/app"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
 	"time"
 )
@@ -15,7 +15,7 @@ import (
 func TestImportSingboxJSONSubscriptionCreatesNodes(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -74,7 +74,7 @@ func TestImportSingboxJSONSubscriptionCreatesNodes(t *testing.T) {
 func TestImportClashURIAndBase64SubscriptionFormats(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -133,7 +133,7 @@ proxies:
 func TestSubscriptionSkippedEntrySummaryIsReturnedAndPersisted(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -206,7 +206,7 @@ func TestSubscriptionRefreshUpdatesImportResultAndKeepsNodesOnFailure(t *testing
 	}))
 	t.Cleanup(remote.Close)
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -291,7 +291,7 @@ func TestSubscriptionDetailOmitsRemoteContent(t *testing.T) {
 	}))
 	t.Cleanup(remote.Close)
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -349,7 +349,7 @@ func TestSubscriptionRefreshCurrentDynamicProfileNodeStartsReevaluation(t *testi
 	}))
 	t.Cleanup(remote.Close)
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -447,7 +447,7 @@ func TestSubscriptionRefreshStickyProfileRetainsHiddenCurrentNodeUntilSwitch(t *
 	}))
 	t.Cleanup(remote.Close)
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -586,7 +586,7 @@ func assertProfileEvaluationRun(t *testing.T, baseURL, adminToken, profileID, tr
 func TestDeletingSubscriptionRemovesSourceWithoutDeletingSharedNode(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -651,7 +651,7 @@ func TestDeletingSubscriptionRemovesSourceWithoutDeletingSharedNode(t *testing.T
 func TestDeletingSubscriptionRemovesOrphanNodeAndInvalidatesReferences(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -708,7 +708,7 @@ func TestDeletingSubscriptionRemovesOrphanNodeAndInvalidatesReferences(t *testin
 func TestClashProxyGroupsAreSkippedWithoutCreatingAccessProfiles(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

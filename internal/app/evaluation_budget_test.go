@@ -7,16 +7,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
 	"time"
-
-	"proxygateway/internal/app"
 )
 
 func TestEvaluationSettingsRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -54,7 +53,7 @@ func TestEvaluationBudgetSkipsFreshProfileAndCapsCandidates(t *testing.T) {
 
 	slowProxy := newDelayedHTTPConnectProxy(t, 40*time.Millisecond)
 	fastProxy := newDelayedHTTPConnectProxy(t, 0)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -118,7 +117,7 @@ func TestUnavailableProxyPathFailsFastForHTTPAndSOCKS5(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

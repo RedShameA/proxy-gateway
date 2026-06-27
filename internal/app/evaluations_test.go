@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"proxygateway/internal/app"
+	"proxygateway/internal/testsupport/apptest"
 )
 
 func TestFastestProfileEvaluatesTestURLAndUsesFastestNode(t *testing.T) {
@@ -28,7 +29,7 @@ func TestFastestProfileEvaluatesTestURLAndUsesFastestNode(t *testing.T) {
 
 	slowProxy := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
 	fastProxy := newDelayedHTTPConnectProxy(t, 0)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -94,7 +95,7 @@ func TestFastestProfileSupportsHTTPSTestURL(t *testing.T) {
 	t.Cleanup(target.Close)
 
 	proxy := newHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -124,7 +125,7 @@ func TestFastestProfileTreatsUnauthorizedHTTPResponseAsSuccess(t *testing.T) {
 	t.Cleanup(target.Close)
 
 	proxy := newHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -154,7 +155,7 @@ func TestFastestProfileKeepsCurrentPathUnlessCandidateIsClearlyBetter(t *testing
 
 	currentProxy := newDelayedHTTPConnectProxy(t, 0)
 	challengerProxy := newDelayedHTTPConnectProxy(t, 120*time.Millisecond)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -206,7 +207,7 @@ func TestFastestProfileSwitchesImmediatelyWhenCurrentPathFailsWithUsableCandidat
 
 	currentProxy := newDelayedHTTPConnectProxy(t, 0)
 	failoverProxy := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -251,7 +252,7 @@ func TestFastestProfileEvaluatesCandidatesConcurrentlyAndSelectsAfterAllCandidat
 	slowProxyA := newDelayedHTTPConnectProxy(t, 600*time.Millisecond)
 	slowProxyB := newDelayedHTTPConnectProxy(t, 600*time.Millisecond)
 	slowProxyC := newDelayedHTTPConnectProxy(t, 600*time.Millisecond)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -317,7 +318,7 @@ func TestRunningFastestProfileKeepsExistingProxyPathUsable(t *testing.T) {
 
 	currentProxy := newDelayedHTTPConnectProxy(t, 0)
 	slowProxy := newDelayedHTTPConnectProxy(t, 600*time.Millisecond)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -393,7 +394,7 @@ func TestFastestCountryProfileFiltersByEgressCountry(t *testing.T) {
 
 	usProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "US")
 	jpProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "JP")
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -462,7 +463,7 @@ func TestFastestProfileCountryFilterChangeDropsStaleCurrentPath(t *testing.T) {
 	hkProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "HK")
 	jpProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "JP")
 	jpProxy.setDelay(80 * time.Millisecond)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -502,7 +503,7 @@ func TestFastestCountryProfileUsesDefaultTestURLWhenOmitted(t *testing.T) {
 
 	usProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "US")
 	jpProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "JP")
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -546,17 +547,25 @@ func TestRandomCountryProfileChoosesUsableNodePerTargetConnection(t *testing.T) 
 
 	usProxyA := newCountryHTTPConnectProxy(t, "egress.local:80", "US")
 	usProxyB := newCountryHTTPConnectProxy(t, "egress.local:80", "US")
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
 
-	createHTTPNode(t, srv.URL, adminToken, "us-a", usProxyA)
-	createHTTPNode(t, srv.URL, adminToken, "us-b", usProxyB)
+	usNodeA := createHTTPNode(t, srv.URL, adminToken, "us-a", usProxyA)
+	usNodeB := createHTTPNode(t, srv.URL, adminToken, "us-b", usProxyB)
 	observeResp := postJSON(t, srv.URL+"/api/nodes/observations/run", adminToken, map[string]string{
 		"test_url": "http://egress.local/",
 	})
-	decodeOK(t, observeResp, &struct{}{})
+	var observationResp struct {
+		ObservedNodes int `json:"observed_nodes"`
+	}
+	decodeOK(t, observeResp, &observationResp)
+	if observationResp.ObservedNodes != 2 {
+		t.Fatalf("observed_nodes = %d, want 2", observationResp.ObservedNodes)
+	}
+	waitForNodeObservation(t, srv.URL, adminToken, usNodeA, "US")
+	waitForNodeObservation(t, srv.URL, adminToken, usNodeB, "US")
 
 	profileResp := postJSON(t, srv.URL+"/api/access-profiles", adminToken, map[string]any{
 		"name": "us-random",
@@ -619,7 +628,7 @@ func TestRandomCountryProfileChoosesUsableNodeForSOCKS5Connect(t *testing.T) {
 
 	usProxyA := newCountryHTTPConnectProxy(t, "egress.local:80", "US")
 	usProxyB := newCountryHTTPConnectProxy(t, "egress.local:80", "US")
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t, app.WithoutMaintenanceRunner())
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -629,11 +638,19 @@ func TestRandomCountryProfileChoosesUsableNodeForSOCKS5Connect(t *testing.T) {
 
 	baseURL := "http://" + ln.Addr().String()
 	adminToken := setupAdmin(t, baseURL)
-	createHTTPNode(t, baseURL, adminToken, "us-socks-a", usProxyA)
-	createHTTPNode(t, baseURL, adminToken, "us-socks-b", usProxyB)
+	usNodeA := createHTTPNode(t, baseURL, adminToken, "us-socks-a", usProxyA)
+	usNodeB := createHTTPNode(t, baseURL, adminToken, "us-socks-b", usProxyB)
+	var observationResp struct {
+		ObservedNodes int `json:"observed_nodes"`
+	}
 	decodeOK(t, postJSON(t, baseURL+"/api/nodes/observations/run", adminToken, map[string]string{
 		"test_url": "http://egress.local/",
-	}), &struct{}{})
+	}), &observationResp)
+	if observationResp.ObservedNodes != 2 {
+		t.Fatalf("observed_nodes = %d, want 2", observationResp.ObservedNodes)
+	}
+	waitForNodeObservation(t, baseURL, adminToken, usNodeA, "US")
+	waitForNodeObservation(t, baseURL, adminToken, usNodeB, "US")
 
 	profileResp := postJSON(t, baseURL+"/api/access-profiles", adminToken, map[string]any{
 		"name": "us-random-socks",
@@ -657,7 +674,7 @@ func TestRandomCountryProfileChoosesUsableNodeForSOCKS5Connect(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		conn, err := socks5Connect(ln.Addr().String(), profile.ID, "proxy-password-123", targetHost, targetPort)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("socks connect %d failed: %v", i, err)
 		}
 		_, _ = conn.Write([]byte("GET /random-socks HTTP/1.1\r\nHost: " + targetURL.Host + "\r\n\r\n"))
 		resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
@@ -689,7 +706,7 @@ func TestAccessProfileCandidateFiltersConstrainEvaluation(t *testing.T) {
 	fastProxy := newDelayedHTTPConnectProxy(t, 0)
 	slowProxy := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
 	otherProxy := newDelayedHTTPConnectProxy(t, 0)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -766,7 +783,7 @@ func TestAccessProfileManualOnlyCandidateFilterConstrainEvaluation(t *testing.T)
 
 	subscriptionProxy := newDelayedHTTPConnectProxy(t, 0)
 	manualProxy := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -829,7 +846,7 @@ func TestAccessProfileNodeSourceModeFiltersCandidates(t *testing.T) {
 	manualProxy := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
 	subscriptionProxy := newDelayedHTTPConnectProxy(t, 0)
 	otherSubscriptionProxy := newDelayedHTTPConnectProxy(t, 0)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -910,7 +927,7 @@ func TestDisabledNodeIsExcludedFromAutomaticSelection(t *testing.T) {
 
 	disabledProxy := newDelayedHTTPConnectProxy(t, 0)
 	enabledProxy := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -965,7 +982,7 @@ func TestDisabledNodeIsExcludedFromRandomCountrySelection(t *testing.T) {
 
 	disabledProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "US")
 	enabledProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "US")
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

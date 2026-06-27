@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"proxygateway/internal/app"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
 
 	vmess "github.com/sagernet/sing-vmess"
@@ -20,7 +21,7 @@ import (
 func TestVMessClashAndURIImportsCreateNodes(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -181,7 +182,7 @@ func TestVMessNodeCanServeFixedNodeHTTPProxyPath(t *testing.T) {
 
 	userID := "7c8dd89a-12bf-4f7e-8a72-8fdd1b6d43d1"
 	vmessHost, vmessPort := newSingVMessServer(t, userID)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -257,7 +258,7 @@ func TestVMessNodeCanServeFixedNodeHTTPProxyPath(t *testing.T) {
 func TestVMessMissingRequiredFieldsAreSkipped(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -293,7 +294,7 @@ func TestVMessNodeObservationRecordsEgressCountry(t *testing.T) {
 
 	userID := "0833375f-26e9-4fb9-a18a-d58eea7a0711"
 	vmessHost, vmessPort := newSingVMessServer(t, userID)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -341,7 +342,7 @@ func TestFastestProfileCanSelectVMessNode(t *testing.T) {
 
 	userID := "0b9619e9-6c8e-4cc5-9857-354e9d6479db"
 	vmessHost, vmessPort := newSingVMessServer(t, userID)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -404,7 +405,7 @@ func TestFastestProfileWithFailingVMessCandidateIsFailedNotNoCandidate(t *testin
 	t.Cleanup(target.Close)
 
 	closedPort := freeTCPPort(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

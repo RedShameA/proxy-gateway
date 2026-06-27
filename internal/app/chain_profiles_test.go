@@ -8,11 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"proxygateway/internal/testsupport/apptest"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"proxygateway/internal/app"
 )
 
 func TestFastestFrontProfileEvaluatesChainLinkAndUsesTwoHopPath(t *testing.T) {
@@ -33,7 +32,7 @@ func TestFastestFrontProfileEvaluatesChainLinkAndUsesTwoHopPath(t *testing.T) {
 	exitProxy.allowChainLinkProbeTarget()
 	slowFront := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
 	fastFront := newDelayedHTTPConnectProxy(t, 0)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -112,7 +111,7 @@ func TestChainProfileSwitchesImmediatelyWhenCurrentPathFailsWithUsableCandidate(
 	exitProxy.allowChainLinkProbeTarget()
 	currentFront := newDelayedHTTPConnectProxy(t, 0)
 	failoverFront := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -152,7 +151,7 @@ func TestFastestFrontProfileRequiresExitProtocolHandshake(t *testing.T) {
 	t.Parallel()
 
 	fakeExit := newBareTCPServer(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -205,7 +204,7 @@ func TestEndToEndChainProfileEvaluatesFullPathTestURL(t *testing.T) {
 	exitProxy := newHTTPConnectProxy(t)
 	slowFront := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
 	fastFront := newDelayedHTTPConnectProxy(t, 0)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -284,7 +283,7 @@ func TestEndToEndChainProfileTreatsUnauthorizedHTTPResponseAsSuccess(t *testing.
 
 	exitProxy := newHTTPConnectProxy(t)
 	frontProxy := newHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -325,7 +324,7 @@ func TestFastestFrontProfileCanChainHTTPFrontToShadowsocksExit(t *testing.T) {
 
 	ssHost, ssPort := newSingShadowsocksServer(t, "aes-128-gcm", "chain-exit-password")
 	frontProxy := newHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -402,7 +401,7 @@ func TestEndToEndChainProfileCanEvaluateHTTPFrontToShadowsocksExit(t *testing.T)
 	ssHost, ssPort := newSingShadowsocksServer(t, "aes-128-gcm", "e2e-chain-exit-password")
 	slowFront := newDelayedHTTPConnectProxy(t, 80*time.Millisecond)
 	fastFront := newDelayedHTTPConnectProxy(t, 0)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -475,7 +474,7 @@ func TestEndToEndChainProfileCanEvaluateHTTPFrontToSOCKS5Exit(t *testing.T) {
 
 	exitProxy := newSOCKS5Proxy(t)
 	frontProxy := newHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -558,7 +557,7 @@ func TestSOCKS5ProxyUsesTwoHopAccessProfilePath(t *testing.T) {
 	exitProxy := newHTTPConnectProxy(t)
 	exitProxy.allowChainLinkProbeTarget()
 	frontProxy := newHTTPConnectProxy(t)
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

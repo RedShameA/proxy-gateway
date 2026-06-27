@@ -37,3 +37,24 @@ func TestBuildSummaryAppliesStableReadModelDefaults(t *testing.T) {
 		t.Fatalf("LastEvaluatedAt = %#v, want nil", summary.LastEvaluatedAt)
 	}
 }
+
+func TestBuildSummaryListUsesStableAliases(t *testing.T) {
+	summary := Summary{ID: "profile_1", Name: "default"}
+
+	list := BuildSummaryList([]Summary{summary}, 3)
+
+	if list.Total != 3 || len(list.Items) != 1 || len(list.AccessProfiles) != 1 {
+		t.Fatalf("summary list shape = %#v", list)
+	}
+	if !reflect.DeepEqual(list.Items, list.AccessProfiles) {
+		t.Fatalf("summary list aliases differ: %#v", list)
+	}
+}
+
+func TestBuildSummaryListReturnsEmptySlices(t *testing.T) {
+	list := BuildSummaryList(nil, 0)
+
+	if list.Items == nil || list.AccessProfiles == nil {
+		t.Fatalf("summary list slices = %#v, want non-nil empty slices", list)
+	}
+}

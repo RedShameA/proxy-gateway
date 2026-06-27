@@ -16,7 +16,7 @@ func TestNodeObservationMaintenanceDoesNotEnqueueProfileEvaluations(t *testing.T
 	t.Cleanup(probe.Close)
 
 	g := NewForTest(t)
-	if _, err := g.db.Exec(
+	if _, err := g.store.DB.Exec(
 		`INSERT INTO nodes (id, fingerprint, name, type, created_at) VALUES ('node_observed', 'fp-observed', 'observed', 'direct', ?)`,
 		unixMillisNow(),
 	); err != nil {
@@ -25,7 +25,7 @@ func TestNodeObservationMaintenanceDoesNotEnqueueProfileEvaluations(t *testing.T
 	cfg := defaultAccessProfileConfig("profile_auto")
 	cfg.Name = "auto"
 	cfg.Type = "fastest"
-	cfg.AutoEvalEnabled = true
+	cfg.AutoEvaluationEnabled = true
 	if err := g.insertAccessProfileConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestNodeObservationMaintenanceDoesNotEnqueueProfileEvaluations(t *testing.T
 	}
 
 	var count int
-	if err := g.db.QueryRow(`SELECT COUNT(*) FROM maintenance_runs WHERE run_type = 'profile_evaluation' AND target_id = ?`, cfg.ID).Scan(&count); err != nil {
+	if err := g.store.DB.QueryRow(`SELECT COUNT(*) FROM maintenance_runs WHERE run_type = 'profile_evaluation' AND target_id = ?`, cfg.ID).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {
@@ -62,26 +62,28 @@ func TestAccessProfileRecentEventsExposeSkippedEvaluationAndTriggerSource(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.finishMaintenanceRun(skipped.ID, maintenanceRunResultSkipped, "min_interval_not_reached", 0, skipped.detail(), ""); err != nil {
+	if err := g.finishMaintenanceRun(skipped.ID, maintenanceRunResultSkipped, "min_interval_not_reached", 0, maintenanceRunDetail(skipped), ""); err != nil {
 		t.Fatal(err)
 	}
 	failed, err := g.createMaintenanceRun("profile_evaluation", "access_profile_change", cfg.ID, cfg.Name, 1, map[string]any{"config_version": cfg.ConfigVersion})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.finishMaintenanceRun(failed.ID, maintenanceRunResultFailure, "evaluation_failed", 1, failed.detail(), "EOF"); err != nil {
+	if err := g.finishMaintenanceRun(failed.ID, maintenanceRunResultFailure, "evaluation_failed", 1, maintenanceRunDetail(failed), "EOF"); err != nil {
 		t.Fatal(err)
 	}
 	now := unixMillisNow()
-	if _, err := g.db.Exec(`UPDATE maintenance_runs SET created_at = CASE id WHEN ? THEN ? WHEN ? THEN ? ELSE created_at END`, skipped.ID, now, failed.ID, now+1); err != nil {
+	if _, err := g.store.DB.Exec(`UPDATE maintenance_runs SET created_at = CASE id WHEN ? THEN ? WHEN ? THEN ? ELSE created_at END`, skipped.ID, now, failed.ID, now+1); err != nil {
 		t.Fatal(err)
 	}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/access-profiles/"+cfg.ID, nil)
-	g.handleAccessProfileGet(rec, req, cfg.ID)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	detail, err := g.accessProfileDetail(cfg.ID, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(detail)
+	if err != nil {
+		t.Fatal(err)
 	}
 	var body struct {
 		RecentEvents []struct {
@@ -92,7 +94,7 @@ func TestAccessProfileRecentEventsExposeSkippedEvaluationAndTriggerSource(t *tes
 			LastError     string `json:"last_error"`
 		} `json:"recent_events"`
 	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatal(err)
 	}
 	if len(body.RecentEvents) != 2 {

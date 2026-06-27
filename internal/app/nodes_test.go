@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"proxygateway/internal/app"
 	sqliteinfra "proxygateway/internal/infrastructure/sqlite"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
 	"time"
 )
@@ -17,7 +18,7 @@ import (
 func TestListNodesDoesNotDeadlockWithSingleDBConnection(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	handler := gw.Handler()
 	doJSON := func(method, target, token string, body any) *httptest.ResponseRecorder {
 		t.Helper()
@@ -170,7 +171,7 @@ func TestListNodesFiltersBeforePagination(t *testing.T) {
 func TestNodeDeduplicationAcrossSources(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -216,7 +217,7 @@ func TestNodeDeduplicationAcrossSources(t *testing.T) {
 func TestManualNodeImportSupportsURIOutboundJSONAndDedup(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -288,7 +289,7 @@ func TestManualNodeImportSupportsURIOutboundJSONAndDedup(t *testing.T) {
 func TestDeleteManualNodeRemovesManualSourceAndKeepsSharedSubscriptionNode(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -341,7 +342,7 @@ func TestDeleteManualNodeRemovesManualSourceAndKeepsSharedSubscriptionNode(t *te
 func TestUpdateManualNodeEditsPureManualNodeInPlace(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -423,7 +424,7 @@ func TestUpdateManualNodeEditsPureManualNodeInPlace(t *testing.T) {
 func TestUpdateManualNodeWithImportTextSupportsHTTPAndSOCKS5(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -487,7 +488,7 @@ func TestUpdateManualNodeWithImportTextSupportsHTTPAndSOCKS5(t *testing.T) {
 func TestUpdateManualNodeWithImportTextSupportsNonFormNodeTypes(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -525,7 +526,7 @@ func TestUpdateManualNodeWithImportTextSupportsNonFormNodeTypes(t *testing.T) {
 func TestUpdateManualNodeWithImportTextRejectsMultipleNodes(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -553,7 +554,7 @@ func TestUpdateManualNodeWithImportTextRejectsMultipleNodes(t *testing.T) {
 func TestUpdateManualSharedNodeSplitsFromSubscriptionNode(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -632,7 +633,7 @@ func TestUpdateManualSharedNodeSplitsFromSubscriptionNode(t *testing.T) {
 func TestUpdateManualSharedNodeWithImportTextSplitsFromSubscriptionNode(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -691,7 +692,7 @@ func TestUpdateManualSharedNodeWithImportTextSplitsFromSubscriptionNode(t *testi
 func TestUpdateSubscriptionOnlyNodeIsForbidden(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -727,7 +728,7 @@ func TestUpdateSubscriptionOnlyNodeIsForbidden(t *testing.T) {
 func TestUpdatePureManualNodeRejectsDuplicateFingerprint(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -778,7 +779,7 @@ func TestUpdatePureManualNodeRejectsDuplicateFingerprint(t *testing.T) {
 func TestUpdateNodeEnabledStillWorks(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)
@@ -817,7 +818,7 @@ func TestNodeListCanFilterByEgressCountryUsabilityAndName(t *testing.T) {
 
 	usProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "US")
 	jpProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "JP")
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

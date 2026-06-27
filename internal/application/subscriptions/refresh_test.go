@@ -46,3 +46,40 @@ func TestBuildRefreshSuccessOutcomeWarnsWhenNoNodesImported(t *testing.T) {
 		t.Fatalf("outcome counts = %#v, want imported 0 skipped 2", outcome)
 	}
 }
+
+func TestRefreshSuccessOutcomeBuildsMaintenanceDetail(t *testing.T) {
+	outcome := BuildRefreshSuccessOutcome(RefreshImportResult{
+		SubscriptionID: "sub-1",
+		ImportedNodes:  3,
+		SkippedEntrySummary: []SkippedEntrySummary{
+			{Reason: "clash_proxy_group_ignored", Count: 2},
+			{Reason: "malformed_entry", Count: 1},
+		},
+	})
+	base := map[string]any{"existing": true}
+
+	detail := outcome.MaintenanceDetail(base)
+
+	if detail["subscription_id"] != "sub-1" || detail["imported_count"] != 3 || detail["imported"] != 3 {
+		t.Fatalf("detail import fields = %#v", detail)
+	}
+	if detail["retained_count"] != 3 || detail["added_count"] != 0 || detail["updated_count"] != 0 || detail["removed_count"] != 0 {
+		t.Fatalf("detail mutation counts = %#v", detail)
+	}
+	if detail["ignored_count"] != 2 || detail["skipped_count"] != 1 {
+		t.Fatalf("detail skip counts = %#v", detail)
+	}
+	if base["subscription_id"] != nil {
+		t.Fatalf("base detail was mutated: %#v", base)
+	}
+}
+
+func TestRefreshFailureOutcomeBuildsMaintenanceDetail(t *testing.T) {
+	outcome := BuildRefreshFetchFailure("sub-1")
+
+	detail := outcome.MaintenanceDetail(nil)
+
+	if detail["subscription_id"] != "sub-1" {
+		t.Fatalf("detail = %#v", detail)
+	}
+}

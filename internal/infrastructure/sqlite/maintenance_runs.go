@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+
+	maintenanceapp "proxygateway/internal/application/maintenance"
 )
 
 const (
@@ -65,6 +67,17 @@ type MaintenanceRunListResult struct {
 	PageSize int
 }
 
+type DanglingProfileRepairResult struct {
+	RepairedCount  int
+	InvalidCount   int
+	EvaluationRefs []ProfileEvaluationRef
+}
+
+type ProfileEvaluationRef struct {
+	ID   string
+	Name string
+}
+
 func NewMaintenanceRunRepository(db *sql.DB) MaintenanceRunRepository {
 	return MaintenanceRunRepository{db: db}
 }
@@ -104,6 +117,9 @@ func (r MaintenanceRunRepository) Load(ctx context.Context, id string) (Maintena
 		id,
 	))
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return MaintenanceRunRecord{}, maintenanceapp.ErrRunNotFound
+		}
 		return MaintenanceRunRecord{}, err
 	}
 	return record, nil
@@ -268,6 +284,170 @@ func (r MaintenanceRunRepository) List(ctx context.Context, filter MaintenanceRu
 	return MaintenanceRunListResult{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
+func (r MaintenanceRunRepository) ListProfileEvents(ctx context.Context, profileID string, limit int) ([]MaintenanceRunRecord, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := r.db.QueryContext(
+		ctx,
+		`SELECT id, run_type, trigger_source, target_id, target_label, state, result, reason_code,
+		        total_count, finished_count, detail_json, last_error, created_at, started_at, finished_at, updated_at
+		   FROM maintenance_runs
+		  WHERE target_id = ? AND run_type IN ('profile_evaluation', 'profile_switch')
+		  ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+		profileID,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return scanMaintenanceRuns(rows)
+}
+
+func (r MaintenanceRunRepository) ListUnfinished(ctx context.Context, runType string) ([]MaintenanceRunRecord, error) {
+	rows, err := r.db.QueryContext(
+		ctx,
+		`SELECT id, run_type, trigger_source, target_id, target_label, state, result, reason_code,
+		        total_count, finished_count, detail_json, last_error, created_at, started_at, finished_at, updated_at
+		   FROM maintenance_runs
+		  WHERE run_type = ? AND state != ?`,
+		runType,
+		maintenanceRunStateFinished,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return scanMaintenanceRuns(rows)
+}
+
+func (r MaintenanceRunRepository) ListActive(ctx context.Context) ([]MaintenanceRunRecord, error) {
+	rows, err := r.db.QueryContext(
+		ctx,
+		`SELECT id, run_type, trigger_source, target_id, target_label, state, result, reason_code,
+		        total_count, finished_count, detail_json, last_error, created_at, started_at, finished_at, updated_at
+		   FROM maintenance_runs
+		  WHERE state IN (?, ?)`,
+		maintenanceRunStateQueued,
+		maintenanceRunStateRunning,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return scanMaintenanceRuns(rows)
+}
+
+func (r MaintenanceRunRepository) RepairDanglingProfilePaths(ctx context.Context, nowMillis int64) (DanglingProfileRepairResult, error) {
+	rows, err := r.db.QueryContext(
+		ctx,
+		`SELECT p.id, p.name, p.type, p.fixed_node_id, p.current_node_id, p.current_exit_node_id, p.auto_evaluation_enabled
+		   FROM access_profiles p
+		  WHERE p.state IN ('ready', 'degraded', 'running')
+		    AND (
+		      (p.current_node_id != '' AND NOT EXISTS (SELECT 1 FROM nodes n WHERE n.id = p.current_node_id))
+		      OR (p.current_exit_node_id != '' AND NOT EXISTS (SELECT 1 FROM nodes n WHERE n.id = p.current_exit_node_id))
+		      OR (p.fixed_node_id != '' AND NOT EXISTS (SELECT 1 FROM nodes n WHERE n.id = p.fixed_node_id))
+		    )`,
+	)
+	if err != nil {
+		return DanglingProfileRepairResult{}, err
+	}
+	type danglingProfile struct {
+		id          string
+		name        string
+		profileType string
+		fixedNodeID string
+		currentNode string
+		currentExit string
+		autoEval    bool
+	}
+	var profiles []danglingProfile
+	for rows.Next() {
+		var profile danglingProfile
+		var autoEval int
+		if err := rows.Scan(&profile.id, &profile.name, &profile.profileType, &profile.fixedNodeID, &profile.currentNode, &profile.currentExit, &autoEval); err != nil {
+			_ = rows.Close()
+			return DanglingProfileRepairResult{}, err
+		}
+		profile.autoEval = autoEval == 1
+		profiles = append(profiles, profile)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return DanglingProfileRepairResult{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return DanglingProfileRepairResult{}, err
+	}
+	result := DanglingProfileRepairResult{}
+	for _, profile := range profiles {
+		if profile.fixedNodeID != "" && r.nodeMissing(ctx, profile.fixedNodeID) {
+			if _, err := r.db.ExecContext(
+				ctx,
+				`UPDATE access_profiles
+				    SET current_node_id = '',
+				        current_exit_node_id = '',
+				        state = 'invalid_config',
+				        last_error = 'referenced node no longer exists',
+				        switch_reason = 'missing_fixed_node',
+				        last_evaluated_at = ?
+				  WHERE id = ?`,
+				nowMillis,
+				profile.id,
+			); err != nil {
+				return result, err
+			}
+			result.InvalidCount++
+			continue
+		}
+		if profile.profileType != "fastest" && profile.profileType != "chain" {
+			continue
+		}
+		if profile.autoEval {
+			if _, err := r.db.ExecContext(
+				ctx,
+				`UPDATE access_profiles
+				    SET current_node_id = '',
+				        current_exit_node_id = '',
+				        state = 'waiting_observation',
+				        last_error = '',
+				        switch_reason = 'current_node_removed',
+				        last_evaluation_started_at = ?
+				  WHERE id = ?`,
+				nowMillis,
+				profile.id,
+			); err != nil {
+				return result, err
+			}
+			result.EvaluationRefs = append(result.EvaluationRefs, ProfileEvaluationRef{ID: profile.id, Name: profile.name})
+		} else {
+			if _, err := r.db.ExecContext(
+				ctx,
+				`UPDATE access_profiles
+				    SET current_node_id = '',
+				        current_exit_node_id = '',
+				        state = 'pending',
+				        last_error = 'current node no longer exists',
+				        switch_reason = 'current_node_removed'
+				  WHERE id = ?`,
+				profile.id,
+			); err != nil {
+				return result, err
+			}
+		}
+		result.RepairedCount++
+	}
+	return result, nil
+}
+
+func (r MaintenanceRunRepository) nodeMissing(ctx context.Context, nodeID string) bool {
+	if strings.TrimSpace(nodeID) == "" {
+		return false
+	}
+	var exists int
+	err := r.db.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ?`, nodeID).Scan(&exists)
+	return err != nil
+}
+
 func maintenanceRunListWhere(filter MaintenanceRunListFilter) (string, []any) {
 	var clauses []string
 	var args []any
@@ -291,6 +471,22 @@ func maintenanceRunListWhere(filter MaintenanceRunListFilter) (string, []any) {
 		return "", args
 	}
 	return "WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func scanMaintenanceRuns(rows *sql.Rows) ([]MaintenanceRunRecord, error) {
+	defer rows.Close()
+	var runs []MaintenanceRunRecord
+	for rows.Next() {
+		record, err := scanMaintenanceRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return runs, nil
 }
 
 func scanMaintenanceRun(row maintenanceRunScanner) (MaintenanceRunRecord, error) {

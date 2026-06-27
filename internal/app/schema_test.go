@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"testing"
 
+	databaseinfra "proxygateway/internal/infrastructure/database"
 	sqliteinfra "proxygateway/internal/infrastructure/sqlite"
+	storageinfra "proxygateway/internal/infrastructure/storage"
 )
 
 func TestRequestLogsMigrationRebuildsSuccessAsNullable(t *testing.T) {
@@ -42,13 +44,13 @@ func TestRequestLogsMigrationRebuildsSuccessAsNullable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := &Gateway{db: db, dataDir: dataDir}
+	g := &Gateway{store: storageinfra.Handle{DB: db, Dialect: databaseinfra.DialectSQLite}, dataDir: dataDir}
 	if err := g.migrate(); err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
 
-	rows, err := g.db.Query(`PRAGMA table_info(request_logs)`)
+	rows, err := g.store.DB.Query(`PRAGMA table_info(request_logs)`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,13 +81,13 @@ func TestRequestLogsMigrationRebuildsSuccessAsNullable(t *testing.T) {
 	var state string
 	var success sql.NullInt64
 	var failureStage string
-	if err := g.db.QueryRow(`SELECT state, success, failure_stage FROM request_logs WHERE id = 'old_log'`).Scan(&state, &success, &failureStage); err != nil {
+	if err := g.store.DB.QueryRow(`SELECT state, success, failure_stage FROM request_logs WHERE id = 'old_log'`).Scan(&state, &success, &failureStage); err != nil {
 		t.Fatal(err)
 	}
 	if state != "completed" || !success.Valid || success.Int64 != 1 || failureStage != "" {
 		t.Fatalf("migrated request log state=%q success=%v failure_stage=%q, want completed/1 empty", state, success, failureStage)
 	}
-	assertGooseVersion(t, g.db)
+	assertGooseVersion(t, g.store.DB)
 }
 
 func TestAccessProfilesMigrationDropsMaximumHoldSeconds(t *testing.T) {
@@ -118,13 +120,13 @@ func TestAccessProfilesMigrationDropsMaximumHoldSeconds(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO kv_settings (key, value) VALUES ('switching_tolerance.maximum_hold_seconds', '300')`); err != nil {
 		t.Fatal(err)
 	}
-	g := &Gateway{db: db, dataDir: dataDir}
+	g := &Gateway{store: storageinfra.Handle{DB: db, Dialect: databaseinfra.DialectSQLite}, dataDir: dataDir}
 	if err := g.migrate(); err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
 
-	rows, err := g.db.Query(`PRAGMA table_info(access_profiles)`)
+	rows, err := g.store.DB.Query(`PRAGMA table_info(access_profiles)`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,13 +151,13 @@ func TestAccessProfilesMigrationDropsMaximumHoldSeconds(t *testing.T) {
 	}
 
 	var legacyKVCount int
-	if err := g.db.QueryRow(`SELECT COUNT(*) FROM kv_settings WHERE key = 'switching_tolerance.maximum_hold_seconds'`).Scan(&legacyKVCount); err != nil {
+	if err := g.store.DB.QueryRow(`SELECT COUNT(*) FROM kv_settings WHERE key = 'switching_tolerance.maximum_hold_seconds'`).Scan(&legacyKVCount); err != nil {
 		t.Fatal(err)
 	}
 	if legacyKVCount != 0 {
 		t.Fatalf("legacy maximum_hold_seconds kv count = %d, want 0", legacyKVCount)
 	}
-	assertGooseVersion(t, g.db)
+	assertGooseVersion(t, g.store.DB)
 }
 
 func TestMigrationRecordsGooseVersion(t *testing.T) {
@@ -166,13 +168,13 @@ func TestMigrationRecordsGooseVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := &Gateway{db: db, dataDir: dataDir}
+	g := &Gateway{store: storageinfra.Handle{DB: db, Dialect: databaseinfra.DialectSQLite}, dataDir: dataDir}
 	if err := g.migrate(); err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
 
-	assertGooseVersion(t, g.db)
+	assertGooseVersion(t, g.store.DB)
 }
 
 func assertGooseVersion(t *testing.T, db *sql.DB) {

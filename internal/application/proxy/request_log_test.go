@@ -3,6 +3,11 @@ package proxy
 import (
 	"encoding/json"
 	"testing"
+	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestBuildRequestLogStartCapturesSingleNodePathSnapshot(t *testing.T) {
@@ -76,4 +81,67 @@ func TestBuildRequestLogFailureCapturesStageAndTargetSnapshot(t *testing.T) {
 	if record.FailureStage != "authentication" || record.Error != "invalid credentials" || record.HTTPStatus != 407 || record.DurationMS != 5 {
 		t.Fatalf("failure = %#v", record)
 	}
+}
+
+func TestRequestLogServiceEnqueuesStartFinishAndFailure(t *testing.T) {
+	core, observed := observer.New(zapcore.DebugLevel)
+	sink := &recordingRequestLogSink{}
+	ids := []string{"log_start", "log_failure"}
+	service := NewRequestLogService(sink, func() (string, error) {
+		id := ids[0]
+		ids = ids[1:]
+		return id, nil
+	}, zap.New(core))
+	startedAt := time.UnixMilli(1234)
+	path := SelectedPath{
+		Credential:        CredentialRecord{ID: "cred-1", Remark: "client"},
+		ProfileID:         "profile-1",
+		Profile:           "profile",
+		ProfileIdentifier: "profile-ident",
+		Node:              Node{ID: "node-1", Name: "Node 1", Type: "http", Server: "127.0.0.1", ServerPort: 8080},
+	}
+
+	logID := service.Start(path, "example.test:443", startedAt)
+	service.Finish(logID, true, "", "", 200, 12, 34, 56)
+	service.RecordFailure("bad.example:443", "profile-ident", FailureStageAuthentication, "invalid proxy credentials", 407, startedAt)
+
+	if logID != "log_start" {
+		t.Fatalf("logID = %q, want log_start", logID)
+	}
+	if len(sink.starts) != 1 || sink.starts[0].ID != "log_start" || sink.starts[0].ProxyPath != "Node 1" {
+		t.Fatalf("starts = %#v", sink.starts)
+	}
+	if len(sink.finishes) != 1 || sink.finishes[0].ID != "log_start" || !sink.finishes[0].Success {
+		t.Fatalf("finishes = %#v", sink.finishes)
+	}
+	if len(sink.failures) != 1 || sink.failures[0].ID != "log_failure" || sink.failures[0].FailureStage != FailureStageAuthentication {
+		t.Fatalf("failures = %#v", sink.failures)
+	}
+	if observed.FilterMessage("proxy request completed").Len() != 1 {
+		t.Fatalf("expected one completed debug log, got %d", observed.FilterMessage("proxy request completed").Len())
+	}
+	if observed.FilterMessage("proxy request rejected").Len() != 1 {
+		t.Fatalf("expected one rejected warn log, got %d", observed.FilterMessage("proxy request rejected").Len())
+	}
+}
+
+type recordingRequestLogSink struct {
+	starts   []RequestLogStartRecord
+	finishes []RequestLogFinishRecord
+	failures []RequestLogFailureRecord
+}
+
+func (s *recordingRequestLogSink) EnqueueStart(record RequestLogStartRecord) bool {
+	s.starts = append(s.starts, record)
+	return true
+}
+
+func (s *recordingRequestLogSink) EnqueueFinish(record RequestLogFinishRecord) bool {
+	s.finishes = append(s.finishes, record)
+	return true
+}
+
+func (s *recordingRequestLogSink) EnqueueFailure(record RequestLogFailureRecord) bool {
+	s.failures = append(s.failures, record)
+	return true
 }

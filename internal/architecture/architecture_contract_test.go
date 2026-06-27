@@ -1,6 +1,7 @@
 package architecture
 
 import (
+	"bytes"
 	"go/parser"
 	"go/token"
 	"os"
@@ -25,6 +26,8 @@ func TestDomainPackagesDoNotDependOnAdapters(t *testing.T) {
 		"modernc.org/sqlite",
 		"proxygateway/internal/app",
 		"proxygateway/internal/application",
+		"proxygateway/internal/infrastructure",
+		"proxygateway/internal/interfaces",
 	}
 	assertNoForbiddenImports(t, root, domainDir, forbidden)
 }
@@ -41,8 +44,27 @@ func TestApplicationPackagesDoNotDependOnAdapters(t *testing.T) {
 		"github.com/sagernet/sing-box",
 		"modernc.org/sqlite",
 		"proxygateway/internal/app",
+		"proxygateway/internal/infrastructure",
+		"proxygateway/internal/interfaces",
 	}
 	assertNoForbiddenImports(t, root, applicationDir, forbidden)
+}
+
+func TestInterfacePackagesDoNotDependOnInfrastructureOrApp(t *testing.T) {
+	root := repoRoot(t)
+	interfacesDir := filepath.Join(root, "internal", "interfaces")
+	if _, err := os.Stat(interfacesDir); os.IsNotExist(err) {
+		t.Skip("internal/interfaces has not been introduced yet")
+	}
+	forbidden := []string{
+		"database/sql",
+		"github.com/sagernet/sing",
+		"github.com/sagernet/sing-box",
+		"modernc.org/sqlite",
+		"proxygateway/internal/app",
+		"proxygateway/internal/infrastructure",
+	}
+	assertNoForbiddenImports(t, root, interfacesDir, forbidden)
 }
 
 func TestInfrastructurePackagesDoNotDependOnInterfacesOrApp(t *testing.T) {
@@ -56,6 +78,108 @@ func TestInfrastructurePackagesDoNotDependOnInterfacesOrApp(t *testing.T) {
 		"proxygateway/internal/interfaces",
 	}
 	assertNoForbiddenImports(t, root, infrastructureDir, forbidden)
+}
+
+func TestAppDoesNotDependOnConcreteDatabaseImplementation(t *testing.T) {
+	root := repoRoot(t)
+	appDir := filepath.Join(root, "internal", "app")
+	forbidden := []string{
+		"database/sql",
+		"modernc.org/sqlite",
+		"proxygateway/internal/infrastructure/sqlite",
+	}
+	assertNoForbiddenImports(t, root, appDir, forbidden)
+	assertNoForbiddenText(t, root, appDir, []string{
+		"store.DB",
+		"store.WithTx",
+	})
+}
+
+func TestAppDoesNotDependOnProtocolRuntimeImplementation(t *testing.T) {
+	root := repoRoot(t)
+	appDir := filepath.Join(root, "internal", "app")
+	forbidden := []string{
+		"github.com/sagernet/sing",
+		"github.com/sagernet/sing-box",
+	}
+	assertNoForbiddenImports(t, root, appDir, forbidden)
+}
+
+func TestAppProductionCodeDoesNotDependOnTesting(t *testing.T) {
+	root := repoRoot(t)
+	appDir := filepath.Join(root, "internal", "app")
+	assertNoForbiddenImports(t, root, appDir, []string{
+		"testing",
+	})
+}
+
+func TestAppStorageInfrastructureImportsStayInCompositionFiles(t *testing.T) {
+	root := repoRoot(t)
+	appDir := filepath.Join(root, "internal", "app")
+	allowed := map[string]bool{
+		"gateway.go": true,
+		"schema.go":  true,
+		"types.go":   true,
+	}
+	assertImportOnlyInFiles(t, root, appDir, "proxygateway/internal/infrastructure/storage", allowed)
+}
+
+func TestAppAndInnerLayersDoNotContainDirectSQL(t *testing.T) {
+	root := repoRoot(t)
+	dirs := []string{
+		filepath.Join(root, "internal", "app"),
+		filepath.Join(root, "internal", "application"),
+		filepath.Join(root, "internal", "interfaces"),
+	}
+	for _, dir := range dirs {
+		assertNoForbiddenText(t, root, dir, []string{
+			"database/sql",
+			"*sql.",
+			"SELECT ",
+			"INSERT ",
+			"UPDATE ",
+			"DELETE ",
+			"CREATE ",
+			"ALTER ",
+			"PRAGMA ",
+			"INSERT OR ",
+			"ON CONFLICT",
+		})
+	}
+}
+
+func TestAppDoesNotOwnHTTPAPIRoutesOrProxyProtocolDetails(t *testing.T) {
+	root := repoRoot(t)
+	appDir := filepath.Join(root, "internal", "app")
+	err := filepath.WalkDir(appDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(body, []byte(`"/api/`)) {
+			t.Errorf("%s contains API route text outside the HTTP interface layer", rel(root, path))
+		}
+		for _, marker := range []string{
+			"Proxy-Authorization",
+			"HTTP/1.1 200 Connection Established",
+			"readSOCKS5",
+			"writeSOCKS5",
+		} {
+			if bytes.Contains(body, []byte(marker)) {
+				t.Errorf("%s contains proxy protocol adapter marker %q", rel(root, path), marker)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertNoForbiddenImports(t *testing.T, root, dir string, forbidden []string) {
@@ -78,6 +202,60 @@ func assertNoForbiddenImports(t *testing.T, root, dir string, forbidden []string
 				if importPath == item || strings.HasPrefix(importPath, item+"/") {
 					t.Errorf("%s imports forbidden adapter dependency %q", rel(root, path), importPath)
 				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertImportOnlyInFiles(t *testing.T, root, dir, importPrefix string, allowed map[string]bool) {
+	t.Helper()
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			importPath := strings.Trim(spec.Path.Value, `"`)
+			if importPath == importPrefix || strings.HasPrefix(importPath, importPrefix+"/") {
+				if !allowed[filepath.Base(path)] {
+					t.Errorf("%s imports %q outside app composition files", rel(root, path), importPath)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertNoForbiddenText(t *testing.T, root, dir string, forbidden []string) {
+	t.Helper()
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, item := range forbidden {
+			if bytes.Contains(body, []byte(item)) {
+				t.Errorf("%s contains forbidden text %q", rel(root, path), item)
 			}
 		}
 		return nil

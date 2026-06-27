@@ -3,15 +3,14 @@ package app_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"proxygateway/internal/testsupport/apptest"
 	"testing"
-
-	"proxygateway/internal/app"
 )
 
 func TestOverviewEndpoint(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 
@@ -80,7 +79,7 @@ func TestOverviewEndpoint(t *testing.T) {
 func TestOverviewRequiresAuth(t *testing.T) {
 	t.Parallel()
 
-	gw := app.NewForTest(t)
+	gw := apptest.NewGateway(t)
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 

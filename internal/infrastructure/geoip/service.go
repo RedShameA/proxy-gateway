@@ -1,8 +1,8 @@
 package geoip
 
 import (
+	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	appgeoip "proxygateway/internal/application/geoip"
+
 	"github.com/oschwald/maxminddb-golang"
 )
 
@@ -25,17 +27,17 @@ const (
 
 type Service struct {
 	dataDir string
-	db      *sql.DB
+	status  appgeoip.StatusRepository
 	client  *http.Client
 	mu      sync.RWMutex
 	reader  *maxminddb.Reader
 	path    string
 }
 
-func NewService(dataDir string, db *sql.DB) *Service {
+func NewService(dataDir string, status appgeoip.StatusRepository) *Service {
 	return &Service{
 		dataDir: dataDir,
-		db:      db,
+		status:  status,
 		client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -234,7 +236,7 @@ func (s *Service) downloadAndReplace(assetURL, expectedSHA256 string) (string, s
 }
 
 func (s *Service) storeStatus(path string, loadedAt, updatedAt int64, errorText, sha string) {
-	if s == nil || s.db == nil {
+	if s == nil || s.status == nil {
 		return
 	}
 	if path == "" {
@@ -243,21 +245,13 @@ func (s *Service) storeStatus(path string, loadedAt, updatedAt int64, errorText,
 	if sha == "" && path != "" {
 		sha = fileSHA256(path)
 	}
-	_, _ = s.db.Exec(
-		`INSERT INTO geoip_status (id, file_path, loaded_at, updated_at, last_error, sha256)
-		 VALUES (1, ?, ?, ?, ?, ?)
-		 ON CONFLICT(id) DO UPDATE SET
-			file_path = CASE WHEN excluded.file_path != '' THEN excluded.file_path ELSE geoip_status.file_path END,
-			loaded_at = CASE WHEN excluded.loaded_at != 0 THEN excluded.loaded_at ELSE geoip_status.loaded_at END,
-			updated_at = CASE WHEN excluded.updated_at != 0 THEN excluded.updated_at ELSE geoip_status.updated_at END,
-			last_error = excluded.last_error,
-			sha256 = CASE WHEN excluded.sha256 != '' THEN excluded.sha256 ELSE geoip_status.sha256 END`,
-		path,
-		loadedAt,
-		updatedAt,
-		errorText,
-		sha,
-	)
+	_ = s.status.StoreStatus(context.Background(), appgeoip.StatusUpdate{
+		FilePath:  path,
+		LoadedAt:  loadedAt,
+		UpdatedAt: updatedAt,
+		LastError: errorText,
+		SHA256:    sha,
+	})
 }
 
 func (s *Service) httpGet(rawURL string) (*http.Response, error) {

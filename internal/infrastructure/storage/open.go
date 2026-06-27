@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -16,6 +17,17 @@ type Config struct {
 	DataDir    string
 	SQLitePath string
 	DSN        string
+}
+
+func Migrate(ctx context.Context, handle Handle) error {
+	switch handle.Dialect {
+	case "", databaseinfra.DialectSQLite:
+		return sqliteinfra.Migrate(ctx, handle.DB)
+	case databaseinfra.DialectPostgres:
+		return fmt.Errorf("postgres migrations are not implemented yet")
+	default:
+		return fmt.Errorf("unsupported database dialect %q", handle.Dialect)
+	}
 }
 
 type Handle struct {

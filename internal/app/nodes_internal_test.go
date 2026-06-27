@@ -13,14 +13,18 @@ func TestUpdateManualNodeInvalidatesOldRuntimeFingerprint(t *testing.T) {
 	fake := &trackingNodeProtocolEngine{}
 	g.protocolEngine = fake
 
-	nodeID, err := g.upsertNode(parsedSubscriptionNode{
+	created, err := g.createNodeSource(nodeCreateInput{
 		Name:       "manual-original",
 		Type:       "http",
 		Server:     "127.0.0.1",
 		ServerPort: 19083,
-	}, "manual", "Manual", "manual")
+	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	nodeID, _ := created["id"].(string)
+	if nodeID == "" {
+		t.Fatalf("created node response = %#v", created)
 	}
 	original, err := g.loadNode(nodeID)
 	if err != nil {

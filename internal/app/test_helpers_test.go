@@ -56,6 +56,24 @@ func waitForRequestLogs(t *testing.T, url string, token string, minCount int) []
 	return nil
 }
 
+func waitForNodeObservation(t *testing.T, baseURL, token, nodeID, country string) map[string]any {
+	t.Helper()
+	var last map[string]any
+	for i := 0; i < 50; i++ {
+		var node struct {
+			Observation map[string]any `json:"observation"`
+		}
+		getJSON(t, baseURL+"/api/nodes/"+nodeID, token, &node)
+		last = node.Observation
+		if node.Observation != nil && node.Observation["usable"] == true && node.Observation["egress_country"] == country {
+			return node.Observation
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("node %s observation = %#v, want usable country %s", nodeID, last, country)
+	return nil
+}
+
 func postJSON(t *testing.T, url string, token string, body any) *http.Response {
 	t.Helper()
 	raw, err := json.Marshal(body)
