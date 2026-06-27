@@ -33,7 +33,7 @@ func TestBuildCompletedOutcomeReportsPartialFailure(t *testing.T) {
 		{NodeID: "node-1", Name: "Node 1", OK: true},
 		{NodeID: "node-2", Name: "Node 2", Error: "dial failed"},
 	})
-	if outcome.Result != "warning" || outcome.ReasonCode != "partial_failure" || outcome.FinishedCount != 2 {
+	if outcome.Result != "success" || outcome.ReasonCode != "partial_failure" || outcome.FinishedCount != 2 {
 		t.Fatalf("outcome = %#v", outcome)
 	}
 	if outcome.SuccessCount != 1 || outcome.FailureCount != 1 || outcome.LastError != "dial failed" {

@@ -95,6 +95,81 @@ func TestMaintenanceRunsExposeCompletedManualAllNodeObservation(t *testing.T) {
 	_ = node.ID
 }
 
+func TestMaintenanceRunsTreatPartialNodeObservationAsSuccess(t *testing.T) {
+	t.Parallel()
+
+	probe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ip=203.0.113.46\nloc=US\n"))
+	}))
+	t.Cleanup(probe.Close)
+
+	gw := apptest.NewGateway(t)
+	srv := httptest.NewServer(gw.Handler())
+	t.Cleanup(srv.Close)
+	adminToken := setupAdmin(t, srv.URL)
+
+	decodeOK(t, postJSON(t, srv.URL+"/api/nodes", adminToken, map[string]any{
+		"name": "partial-observation-success",
+		"type": "direct",
+	}), &struct{}{})
+	decodeOK(t, postJSON(t, srv.URL+"/api/nodes", adminToken, map[string]any{
+		"name":        "partial-observation-failure",
+		"type":        "http",
+		"server":      "127.0.0.1",
+		"server_port": 1,
+	}), &struct{}{})
+
+	var runResp struct {
+		ObservedNodes int `json:"observed_nodes"`
+	}
+	decodeOK(t, postJSON(t, srv.URL+"/api/nodes/observations/run", adminToken, map[string]string{
+		"probe_url": probe.URL,
+	}), &runResp)
+	if runResp.ObservedNodes != 1 {
+		t.Fatalf("observed_nodes = %d, want 1", runResp.ObservedNodes)
+	}
+
+	var body struct {
+		Items []struct {
+			RunType       string         `json:"run_type"`
+			TriggerSource string         `json:"trigger_source"`
+			State         string         `json:"state"`
+			Result        string         `json:"result"`
+			ReasonCode    string         `json:"reason_code"`
+			TotalCount    int            `json:"total_count"`
+			FinishedCount int            `json:"finished_count"`
+			LastError     string         `json:"last_error"`
+			Detail        map[string]any `json:"detail"`
+		} `json:"items"`
+	}
+	getJSON(t, srv.URL+"/api/maintenance/runs?run_type=node_observation", adminToken, &body)
+	if len(body.Items) == 0 {
+		t.Fatal("expected at least one maintenance run")
+	}
+	run := body.Items[0]
+	if run.RunType != "node_observation" || run.TriggerSource != "manual" {
+		t.Fatalf("run identity = %#v, want manual node_observation", run)
+	}
+	if run.State != "finished" || run.Result != "success" || run.ReasonCode != "partial_failure" {
+		t.Fatalf("run status = %#v, want finished success partial_failure", run)
+	}
+	if run.TotalCount != 2 || run.FinishedCount != 2 {
+		t.Fatalf("run counts = %d/%d, want 2/2", run.FinishedCount, run.TotalCount)
+	}
+	if run.LastError == "" {
+		t.Fatalf("last_error should be retained for partial failure: %#v", run)
+	}
+	if run.Detail["success_count"] != float64(1) || run.Detail["failure_count"] != float64(1) {
+		t.Fatalf("run detail counts = %#v, want success_count=1 failure_count=1", run.Detail)
+	}
+	if failures, ok := run.Detail["sample_failures"].([]any); !ok || len(failures) != 1 {
+		t.Fatalf("sample_failures = %#v, want one failure sample", run.Detail["sample_failures"])
+	}
+	if reasons, ok := run.Detail["failure_reasons"].(map[string]any); !ok || len(reasons) == 0 {
+		t.Fatalf("failure_reasons = %#v, want retained reasons", run.Detail["failure_reasons"])
+	}
+}
+
 func TestSubscriptionAutoRefreshSettingsAreExposedAndPatchable(t *testing.T) {
 	t.Parallel()
 

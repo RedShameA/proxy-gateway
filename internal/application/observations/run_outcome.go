@@ -59,7 +59,6 @@ func BuildCompletedOutcome(triggerSource string, results []RunResult) RunOutcome
 	}
 	outcome.FailureCount = len(results) - outcome.SuccessCount
 	if outcome.FailureCount > 0 && outcome.SuccessCount > 0 {
-		outcome.Result = "warning"
 		outcome.ReasonCode = "partial_failure"
 	} else if outcome.FailureCount > 0 {
 		outcome.Result = "failure"
