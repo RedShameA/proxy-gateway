@@ -19,6 +19,7 @@ import type { AccessProfileDetail, AccessProfileWriteRequest, MaintenanceRunSumm
 
 const { Title, Text } = Typography;
 const proxyCredentialPasswordPattern = /^[A-Za-z0-9_-]+$/;
+const defaultCredentialRemark = '凭证';
 
 function generateDefaultPassword(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -36,7 +37,7 @@ export function AccessProfileDetailPage({ client }: { client: ApiClient }) {
   const [editVisible, setEditVisible] = useState(false);
   const [newCredVisible, setNewCredVisible] = useState(false);
   const [newPassword, setNewPassword] = useState(generateDefaultPassword());
-  const [newRemark, setNewRemark] = useState('');
+  const [newRemark, setNewRemark] = useState(defaultCredentialRemark);
   const [credPage, setCredPage] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [selectedRun, setSelectedRun] = useState<MaintenanceRunSummary | null>(null);
@@ -139,7 +140,7 @@ export function AccessProfileDetailPage({ client }: { client: ApiClient }) {
       await client.createProxyCredential(id!, { remark: newRemark, password: newPassword });
       Toast.success('凭证已创建');
       setNewCredVisible(false);
-      setNewRemark('');
+      setNewRemark(defaultCredentialRemark);
       setNewPassword(generateDefaultPassword());
       refresh();
     } catch (err) {
@@ -325,7 +326,7 @@ export function AccessProfileDetailPage({ client }: { client: ApiClient }) {
         <div style={{ display: 'grid', gap: 16 }}>
           <div>
             <Text type="secondary">备注</Text>
-            <Input value={newRemark} onChange={setNewRemark} placeholder={`凭证 ${(profile.proxy_credentials?.length || 0) + 1}`} style={{ marginTop: 4 }} />
+            <Input value={newRemark} onChange={setNewRemark} placeholder="凭证名称" style={{ marginTop: 4 }} />
           </div>
           <div>
             <Text type="secondary">密码</Text>

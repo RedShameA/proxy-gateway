@@ -30,3 +30,28 @@ const mockCanvasContext = {
 Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
   value: ((() => mockCanvasContext) as unknown) as typeof HTMLCanvasElement.prototype.getContext,
 });
+
+class MockResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  value: MockResizeObserver,
+  writable: true,
+});
+
+Object.defineProperty(window, 'matchMedia', {
+  value: (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  }),
+  writable: true,
+});

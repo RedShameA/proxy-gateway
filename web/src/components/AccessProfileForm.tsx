@@ -54,6 +54,27 @@ const typeOptions: { value: AccessProfileType; label: string }[] = [
 
 const protocolFallbacks = ['http', 'socks5', 'shadowsocks', 'vmess', 'trojan', 'direct'];
 const profileIdentifierPattern = /^[A-Za-z0-9_-]+$/;
+const profileIdentifierPrefix = 'profile-';
+const profileIdentifierRandomLength = 10;
+const profileIdentifierChars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+function randomIdentifierSuffix(length: number): string {
+  const cryptoObj = globalThis.crypto;
+  if (cryptoObj && typeof cryptoObj.getRandomValues === 'function') {
+    const bytes = new Uint8Array(length);
+    cryptoObj.getRandomValues(bytes);
+    return Array.from(bytes, byte => profileIdentifierChars[byte % profileIdentifierChars.length]).join('');
+  }
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += profileIdentifierChars.charAt(Math.floor(Math.random() * profileIdentifierChars.length));
+  }
+  return result;
+}
+
+function generateDefaultProfileIdentifier(): string {
+  return `${profileIdentifierPrefix}${randomIdentifierSuffix(profileIdentifierRandomLength)}`;
+}
 
 function identifierFrom(name: string, explicit: string) {
   const source = explicit.trim() || name.trim();
@@ -71,7 +92,7 @@ function initialState(profile?: AccessProfileDetail | null): FormState {
   if (!profile) {
     return {
       name: '',
-      profile_identifier: '',
+      profile_identifier: generateDefaultProfileIdentifier(),
       type: 'fastest',
       fixed_node_id: '',
       exit_node_ids: [],
@@ -258,7 +279,7 @@ export function AccessProfileForm({ initial, nodes, countries, subscriptions, su
       </div>
       <div>
         <Text type="secondary">策略标识</Text>
-        <Input value={values.profile_identifier} onChange={v => set('profile_identifier', v)} placeholder="url-safe-identifier" style={{ marginTop: 4 }} />
+        <Input value={values.profile_identifier} onChange={v => set('profile_identifier', v)} placeholder="策略标识" style={{ marginTop: 4 }} />
       </div>
       <div>
         <Text type="secondary">类型</Text>
