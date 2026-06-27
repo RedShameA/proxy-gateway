@@ -1,6 +1,10 @@
 package maintenance
 
-import "testing"
+import (
+	"testing"
+
+	domainprofile "proxygateway/internal/domain/profile"
+)
 
 func TestBuildProfileEvaluationFinishTreatsSuccessfulSwitchAsSuccess(t *testing.T) {
 	finish := BuildProfileEvaluationFinish(ProfileEvaluationFinishInput{
@@ -12,13 +16,13 @@ func TestBuildProfileEvaluationFinishTreatsSuccessfulSwitchAsSuccess(t *testing.
 			"failure_count":   float64(2),
 		},
 		ProfileID:      "profile_1",
-		ProfileState:   "ready",
+		ProfileState:   domainprofile.StateReady,
 		CandidateCount: 47,
 		OK:             true,
-		SwitchReason:   "candidate_clearly_better",
+		SwitchReason:   domainprofile.SwitchReasonCandidateClearlyBetter,
 	})
 
-	if finish.Result != ResultSuccess || finish.ReasonCode != "candidate_clearly_better" || finish.LastError != "" {
+	if finish.Result != ResultSuccess || finish.ReasonCode != domainprofile.SwitchReasonCandidateClearlyBetter || finish.LastError != "" {
 		t.Fatalf("finish result = %#v", finish)
 	}
 	if finish.FinishedCount != 47 {
@@ -27,7 +31,7 @@ func TestBuildProfileEvaluationFinishTreatsSuccessfulSwitchAsSuccess(t *testing.
 	if finish.Detail["success_count"] != 45 || finish.Detail["failure_count"] != 2 {
 		t.Fatalf("detail counts = %#v", finish.Detail)
 	}
-	if finish.Detail["switch_decision"] != "candidate_clearly_better" || finish.Detail["current_path_result"] != "ready" {
+	if finish.Detail["switch_decision"] != domainprofile.SwitchReasonCandidateClearlyBetter || finish.Detail["current_path_result"] != domainprofile.StateReady {
 		t.Fatalf("detail result = %#v", finish.Detail)
 	}
 }
@@ -35,14 +39,14 @@ func TestBuildProfileEvaluationFinishTreatsSuccessfulSwitchAsSuccess(t *testing.
 func TestBuildProfileEvaluationFinishTreatsDegradedFailureAsWarning(t *testing.T) {
 	finish := BuildProfileEvaluationFinish(ProfileEvaluationFinishInput{
 		ProfileID:      "profile_1",
-		ProfileState:   "degraded",
+		ProfileState:   domainprofile.StateDegraded,
 		CandidateCount: 3,
 		OK:             false,
 		LastError:      "dial failed",
-		SwitchReason:   "current_path_reused_after_failure",
+		SwitchReason:   domainprofile.SwitchReasonCurrentPathReusedAfterFailure,
 	})
 
-	if finish.Result != ResultWarning || finish.ReasonCode != "current_path_reused_after_failure" {
+	if finish.Result != ResultWarning || finish.ReasonCode != domainprofile.SwitchReasonCurrentPathReusedAfterFailure {
 		t.Fatalf("finish result = %#v", finish)
 	}
 	if finish.LastError != "dial failed" {

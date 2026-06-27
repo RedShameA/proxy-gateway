@@ -69,7 +69,7 @@ func (h SubscriptionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 		req.Name = strings.TrimSpace(req.Name)
 		req.SourceType = strings.TrimSpace(req.SourceType)
-		if req.Name == "" || (req.SourceType != "local" && req.SourceType != "remote") {
+		if req.Name == "" || (req.SourceType != appsubscriptions.SourceTypeLocal && req.SourceType != appsubscriptions.SourceTypeRemote) {
 			writeError(w, http.StatusBadRequest, validationSubscriptionNameSourceRequired)
 			return
 		}
@@ -218,7 +218,7 @@ func subscriptionDetail(record appsubscriptions.Record) map[string]any {
 		"last_refresh_at":       nil,
 		"refresh_policy":        subscriptionRefreshPolicy(record.AutoRefreshEnabled, record.AutoRefreshIntervalSeconds),
 	}
-	if record.SourceType != "remote" {
+	if record.SourceType != appsubscriptions.SourceTypeRemote {
 		body["content"] = record.Content
 	}
 	return body
@@ -226,22 +226,22 @@ func subscriptionDetail(record appsubscriptions.Record) map[string]any {
 
 func subscriptionState(record appsubscriptions.Record) string {
 	if record.LastError != "" {
-		return "error"
+		return appsubscriptions.StateError
 	}
 	if !record.AutoRefreshEnabled {
-		return "disabled"
+		return appsubscriptions.StateDisabled
 	}
-	return "active"
+	return appsubscriptions.StateActive
 }
 
 func subscriptionRefreshPolicy(enabled bool, intervalSeconds int) map[string]any {
 	if !enabled {
-		return map[string]any{"mode": "disabled", "interval_seconds": nil}
+		return map[string]any{"mode": appsubscriptions.RefreshPolicyModeDisabled, "interval_seconds": nil}
 	}
 	if intervalSeconds > 0 {
-		return map[string]any{"mode": "custom", "interval_seconds": intervalSeconds}
+		return map[string]any{"mode": appsubscriptions.RefreshPolicyModeCustom, "interval_seconds": intervalSeconds}
 	}
-	return map[string]any{"mode": "inherit", "interval_seconds": nil}
+	return map[string]any{"mode": appsubscriptions.RefreshPolicyModeInherit, "interval_seconds": nil}
 }
 
 func skippedSubscriptionSummaryRows(text string) []subscriptionSkippedEntrySummary {

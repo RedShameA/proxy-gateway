@@ -14,7 +14,7 @@ func parseSingBoxOutboundNode(raw json.RawMessage) (ParsedNode, string) {
 func parseSingBoxOutboundNodeWithDetail(raw json.RawMessage) (ParsedNode, string, SkippedEntryDetail) {
 	var outbound map[string]any
 	if err := json.Unmarshal(raw, &outbound); err != nil || len(outbound) == 0 {
-		return ParsedNode{}, skipReasonMalformedEntry, SkippedEntryDetail{Detail: truncateSkippedDetail(string(raw))}
+		return ParsedNode{}, SkippedReasonMalformedEntry, SkippedEntryDetail{Detail: truncateSkippedDetail(string(raw))}
 	}
 	return parsedNodeFromSingBoxOutboundMap(outbound, raw)
 }
@@ -26,11 +26,11 @@ func parsedNodeFromSingBoxOutboundMap(outbound map[string]any, raw json.RawMessa
 		EntryType: outboundType,
 	}
 	if isFunctionalOutboundType(outboundType) {
-		return ParsedNode{}, skipReasonUnsupportedFunctionalOutbound, detail
+		return ParsedNode{}, SkippedReasonUnsupportedFunctionalOutbound, detail
 	}
 	nodeType := normalizeNodeType(outboundType)
 	if !subscriptionNodeTypeSupported(nodeType) {
-		return ParsedNode{}, skipReasonUnsupportedNodeType, detail
+		return ParsedNode{}, SkippedReasonUnsupportedNodeType, detail
 	}
 	port := anyInt(outbound["server_port"])
 	if port == 0 {
@@ -58,13 +58,13 @@ func parsedNodeFromSingBoxOutboundMap(outbound map[string]any, raw json.RawMessa
 		OutboundJSON:  string(raw),
 	}
 	if unsupportedSingBoxOutboundOption(nodeType, outbound) {
-		return ParsedNode{}, skipReasonUnsupportedOption, SkippedEntryDetail{Name: node.Name, EntryType: outboundType}
+		return ParsedNode{}, SkippedReasonUnsupportedOption, SkippedEntryDetail{Name: node.Name, EntryType: outboundType}
 	}
 	if missingSingBoxOutboundRequiredField(nodeType, outbound, node) {
-		return ParsedNode{}, skipReasonMissingRequiredField, SkippedEntryDetail{Name: node.Name, EntryType: outboundType}
+		return ParsedNode{}, SkippedReasonMissingRequiredField, SkippedEntryDetail{Name: node.Name, EntryType: outboundType}
 	}
 	if _, err := normalizedNodeOutboundJSON(node); err != nil {
-		return ParsedNode{}, skipReasonUnsupportedOption, SkippedEntryDetail{Name: node.Name, EntryType: outboundType, Detail: err.Error()}
+		return ParsedNode{}, SkippedReasonUnsupportedOption, SkippedEntryDetail{Name: node.Name, EntryType: outboundType, Detail: err.Error()}
 	}
 	return node, "", SkippedEntryDetail{}
 }
@@ -72,7 +72,7 @@ func parsedNodeFromSingBoxOutboundMap(outbound map[string]any, raw json.RawMessa
 func parsedNodeFromSingBoxOutbound(outbound map[string]any) (ParsedNode, string, SkippedEntryDetail) {
 	raw, err := json.Marshal(outbound)
 	if err != nil {
-		return ParsedNode{}, skipReasonMalformedEntry, SkippedEntryDetail{Detail: err.Error()}
+		return ParsedNode{}, SkippedReasonMalformedEntry, SkippedEntryDetail{Detail: err.Error()}
 	}
 	return parsedNodeFromSingBoxOutboundMap(outbound, raw)
 }

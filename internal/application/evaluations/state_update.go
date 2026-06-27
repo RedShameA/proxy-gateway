@@ -2,7 +2,7 @@ package evaluations
 
 func RunningStateUpdate(startedAt int64) StateUpdate {
 	return StateUpdate{
-		State:                   stringPtr("running"),
+		State:                   stringPtr(ProfileStateRunning),
 		LastError:               stringPtr(""),
 		LastEvaluationStartedAt: int64Ptr(startedAt),
 	}
@@ -73,7 +73,7 @@ func FastestSelectedNodeRemovedUpdate(detailsJSON string, finishedAt int64) Stat
 		LastError:                    stringPtr("selected node no longer exists"),
 		CurrentPathLatencyMS:         int64Ptr(0),
 		IncrementCurrentPathCounters: true,
-		SwitchReason:                 stringPtr("selected_node_removed"),
+		SwitchReason:                 stringPtr(SwitchReasonSelectedNodeRemoved),
 		LastEvaluationDetailsJSON:    stringPtr(detailsJSON),
 		LastEvaluatedAt:              int64Ptr(finishedAt),
 	}
@@ -87,7 +87,7 @@ func ChainSelectedPathRemovedUpdate(detailsJSON string, finishedAt int64) StateU
 		LastError:                    stringPtr("selected chain path no longer exists"),
 		CurrentPathLatencyMS:         int64Ptr(0),
 		IncrementCurrentPathCounters: true,
-		SwitchReason:                 stringPtr("selected_node_removed"),
+		SwitchReason:                 stringPtr(SwitchReasonSelectedNodeRemoved),
 		LastEvaluationDetailsJSON:    stringPtr(detailsJSON),
 		LastEvaluatedAt:              int64Ptr(finishedAt),
 	}

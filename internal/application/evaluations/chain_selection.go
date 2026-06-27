@@ -26,17 +26,17 @@ type ChainSelection struct {
 
 func SelectChainPath(input ChainSelectionInput) ChainSelection {
 	if input.CurrentFrontNodeID == "" || input.CurrentExitNodeID == "" || (input.BestFrontNodeID == input.CurrentFrontNodeID && input.BestExitNodeID == input.CurrentExitNodeID) || input.ForceSwitch {
-		reason := "initial_selection"
+		reason := SwitchReasonInitialSelection
 		if input.ForceSwitch && input.CurrentFrontNodeID != "" && input.CurrentExitNodeID != "" && (input.BestFrontNodeID != input.CurrentFrontNodeID || input.BestExitNodeID != input.CurrentExitNodeID) {
-			reason = "force_switch"
+			reason = SwitchReasonForceSwitch
 		} else if input.BestFrontNodeID == input.CurrentFrontNodeID && input.BestExitNodeID == input.CurrentExitNodeID {
-			reason = "current_path_still_best"
+			reason = SwitchReasonCurrentPathStillBest
 		}
 		return ChainSelection{
 			SelectedFrontNodeID: input.BestFrontNodeID,
 			SelectedExitNodeID:  input.BestExitNodeID,
 			SelectedDurationMS:  input.BestDurationMS,
-			State:               "ready",
+			State:               ProfileStateReady,
 			SwitchReason:        reason,
 		}
 	}
@@ -45,8 +45,8 @@ func SelectChainPath(input ChainSelectionInput) ChainSelection {
 			SelectedFrontNodeID: input.BestFrontNodeID,
 			SelectedExitNodeID:  input.BestExitNodeID,
 			SelectedDurationMS:  input.BestDurationMS,
-			State:               "ready",
-			SwitchReason:        "current_path_failed_switch",
+			State:               ProfileStateReady,
+			SwitchReason:        SwitchReasonCurrentPathFailedSwitch,
 		}
 	}
 	if clearlyBetter(input.BestDurationMS, input.CurrentDurationMS, input.RelativeImprovementThreshold, input.AbsoluteLatencyImprovementMS) {
@@ -54,15 +54,15 @@ func SelectChainPath(input ChainSelectionInput) ChainSelection {
 			SelectedFrontNodeID: input.BestFrontNodeID,
 			SelectedExitNodeID:  input.BestExitNodeID,
 			SelectedDurationMS:  input.BestDurationMS,
-			State:               "ready",
-			SwitchReason:        "candidate_clearly_better",
+			State:               ProfileStateReady,
+			SwitchReason:        SwitchReasonCandidateClearlyBetter,
 		}
 	}
 	return ChainSelection{
 		SelectedFrontNodeID: input.CurrentFrontNodeID,
 		SelectedExitNodeID:  input.CurrentExitNodeID,
 		SelectedDurationMS:  input.CurrentDurationMS,
-		State:               "ready",
-		SwitchReason:        "candidate_not_clearly_better",
+		State:               ProfileStateReady,
+		SwitchReason:        SwitchReasonCandidateNotClearlyBetter,
 	}
 }

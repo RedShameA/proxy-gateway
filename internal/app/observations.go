@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	apperrors "proxygateway/internal/application/apperrors"
+	appmaintenance "proxygateway/internal/application/maintenance"
 	applicationnodes "proxygateway/internal/application/nodes"
 	appobservations "proxygateway/internal/application/observations"
 	probinginfra "proxygateway/internal/infrastructure/probing"
@@ -42,11 +43,11 @@ func (g *Gateway) runManualNodeObservations(req manualNodeObservationRequest) (m
 		return manualNodeObservationResult{}, apperrors.New(apperrors.KindInternal, err.Error(), err)
 	}
 	if plan.CancelUnfinishedAggregateRuns {
-		if err := g.cancelUnfinishedNodeObservationAggregateRuns("replaced_by_manual_run"); err != nil {
+		if err := g.cancelUnfinishedNodeObservationAggregateRuns(appmaintenance.ReasonReplacedByManualRun); err != nil {
 			return manualNodeObservationResult{}, apperrors.New(apperrors.KindInternal, "cancel previous node observation runs", err)
 		}
 	}
-	run, err := g.createNodeObservationRun("manual", plan.Scope, toObservationNodeRecords(plan.Targets), plan.ProbeURL)
+	run, err := g.createNodeObservationRun(appmaintenance.TriggerManual, plan.Scope, toObservationNodeRecords(plan.Targets), plan.ProbeURL)
 	if err != nil {
 		return manualNodeObservationResult{}, apperrors.New(apperrors.KindInternal, "create maintenance run", err)
 	}

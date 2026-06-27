@@ -57,7 +57,7 @@ func TestRequestLogRepositoryContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	successes, err := repo.List(ctx, appproxy.RequestLogListFilter{Result: "success", Page: 1, PageSize: 10})
+	successes, err := repo.List(ctx, appproxy.RequestLogListFilter{Result: appproxy.RequestLogResultSuccess, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

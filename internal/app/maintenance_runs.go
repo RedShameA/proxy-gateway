@@ -13,21 +13,21 @@ import (
 )
 
 const (
-	maintenanceRunTypeProfileSwitch = "profile_switch"
+	maintenanceRunTypeProfileSwitch = maintenanceapp.RunTypeProfileSwitch
 	maintenanceRunTypeLogCleanup    = maintenanceapp.RunTypeLogCleanup
 	maintenanceRunTypeStartup       = maintenanceapp.RunTypeStartupCleanup
 
-	maintenanceRunStateQueued   = "queued"
-	maintenanceRunStateRunning  = "running"
-	maintenanceRunStateFinished = "finished"
+	maintenanceRunStateQueued   = maintenanceapp.StateQueued
+	maintenanceRunStateRunning  = maintenanceapp.StateRunning
+	maintenanceRunStateFinished = maintenanceapp.StateFinished
 
-	maintenanceRunResultSuccess   = "success"
-	maintenanceRunResultWarning   = "warning"
-	maintenanceRunResultFailure   = "failure"
-	maintenanceRunResultSkipped   = "skipped"
-	maintenanceRunResultCancelled = "cancelled"
+	maintenanceRunResultSuccess   = maintenanceapp.ResultSuccess
+	maintenanceRunResultWarning   = maintenanceapp.ResultWarning
+	maintenanceRunResultFailure   = maintenanceapp.ResultFailure
+	maintenanceRunResultSkipped   = maintenanceapp.ResultSkipped
+	maintenanceRunResultCancelled = maintenanceapp.ResultCancelled
 
-	maintenanceRunReasonCompleted = "completed"
+	maintenanceRunReasonCompleted = maintenanceapp.ReasonCompleted
 )
 
 type maintenanceRunRecord = maintenanceapp.Run
@@ -205,7 +205,7 @@ func (g *Gateway) runMaintenanceRun(runID string) error {
 	})
 	if errors.Is(err, maintenanceapp.ErrUnknownRunType) {
 		err := errors.New("unknown maintenance run type")
-		_ = g.finishMaintenanceRun(run.ID, maintenanceRunResultFailure, "unknown_run_type", run.FinishedCount, maintenanceRunDetail(run), err.Error())
+		_ = g.finishMaintenanceRun(run.ID, maintenanceRunResultFailure, maintenanceapp.ReasonUnknownRunType, run.FinishedCount, maintenanceRunDetail(run), err.Error())
 		return err
 	}
 	return err
@@ -217,7 +217,7 @@ func (g *Gateway) cancelExpiredMaintenanceRunsOnStartup() error {
 		return err
 	}
 	for _, ref := range result.EvaluationRefs {
-		_, _ = g.enqueueProfileEvaluationRun(ref.ID, ref.Name, "current_node_observed", 0, true)
+		_, _ = g.enqueueProfileEvaluationRun(ref.ID, ref.Name, maintenanceapp.TriggerCurrentNodeObserved, 0, true)
 	}
 	return nil
 }
@@ -290,7 +290,7 @@ func (g *Gateway) runSubscriptionRefreshMaintenanceRun(runID string) error {
 	sub, err := g.loadSubscription(run.TargetID)
 	if err != nil {
 		detail["subscription_id"] = run.TargetID
-		_ = g.finishMaintenanceRun(run.ID, maintenanceRunResultFailure, "subscription_not_found", 1, detail, err.Error())
+		_ = g.finishMaintenanceRun(run.ID, maintenanceRunResultFailure, maintenanceapp.ReasonSubscriptionNotFound, 1, detail, err.Error())
 		return err
 	}
 	if err := g.startMaintenanceRun(run.ID); err != nil {
@@ -318,8 +318,8 @@ func (g *Gateway) runSubscriptionRefreshMaintenanceRun(runID string) error {
 	}
 	outcome := appsubscriptions.BuildRefreshSuccessOutcome(appsubscriptions.RefreshImportResultFromImportResult(result))
 	detail = outcome.MaintenanceDetail(detail)
-	g.logSubscriptionRefreshEntrySummary(run.ID, outcome.SubscriptionID, "ignored", outcome.IgnoredSummary)
-	g.logSubscriptionRefreshEntrySummary(run.ID, outcome.SubscriptionID, "skipped", outcome.SkippedSummary)
+	g.logSubscriptionRefreshEntrySummary(run.ID, outcome.SubscriptionID, appsubscriptions.SummaryTypeIgnored, outcome.IgnoredSummary)
+	g.logSubscriptionRefreshEntrySummary(run.ID, outcome.SubscriptionID, appsubscriptions.SummaryTypeSkipped, outcome.SkippedSummary)
 	g.logSubscriptionRefreshOutcome(run.ID, outcome)
 	if outcome.EnqueueObservation {
 		g.enqueueObservationForSubscriptionNodes(sub.ID)
@@ -339,19 +339,19 @@ func (g *Gateway) runProfileEvaluationMaintenanceRun(runID string) error {
 	detail := maintenanceRunDetail(run)
 	forceSwitch, _ := detail["force_switch"].(bool)
 	requestedConfigVersion := int64FromDetail(detail["config_version"])
-	if run.TriggerSource != "current_node_observed" && g.profileWaitingForObservation(run.TargetID) {
+	if run.TriggerSource != maintenanceapp.TriggerCurrentNodeObserved && g.profileWaitingForObservation(run.TargetID) {
 		detail["profile_id"] = run.TargetID
-		return g.finishMaintenanceRun(run.ID, maintenanceRunResultSkipped, "waiting_for_observation", 0, detail, "")
+		return g.finishMaintenanceRun(run.ID, maintenanceRunResultSkipped, maintenanceapp.ReasonWaitingForObservation, 0, detail, "")
 	}
 	target, settings, skipped, err := g.profileEvaluationTarget(run.TargetID, forceSwitch)
 	if err != nil {
 		detail["profile_id"] = run.TargetID
-		_ = g.finishMaintenanceRun(run.ID, maintenanceRunResultFailure, "profile_load_failed", 0, detail, err.Error())
+		_ = g.finishMaintenanceRun(run.ID, maintenanceRunResultFailure, maintenanceapp.ReasonProfileLoadFailed, 0, detail, err.Error())
 		return err
 	}
 	if skipped {
 		detail["profile_id"] = run.TargetID
-		return g.finishMaintenanceRun(run.ID, maintenanceRunResultSkipped, "min_interval_not_reached", 0, detail, "")
+		return g.finishMaintenanceRun(run.ID, maintenanceRunResultSkipped, maintenanceapp.ReasonMinIntervalNotReached, 0, detail, "")
 	}
 	if guard := appevaluations.CheckConfigVersion(appevaluations.ConfigVersionGuardInput{
 		RequestedConfigVersion: requestedConfigVersion,
@@ -381,7 +381,7 @@ func (g *Gateway) runProfileEvaluationMaintenanceRun(runID string) error {
 	cfg, cfgErr := g.loadAccessProfileConfig(run.TargetID)
 	if cfgErr != nil {
 		detail["profile_id"] = run.TargetID
-		_ = g.finishMaintenanceRun(run.ID, maintenanceRunResultFailure, "profile_load_failed", 0, detail, cfgErr.Error())
+		_ = g.finishMaintenanceRun(run.ID, maintenanceRunResultFailure, maintenanceapp.ReasonProfileLoadFailed, 0, detail, cfgErr.Error())
 		return cfgErr
 	}
 	finish := maintenanceapp.BuildProfileEvaluationFinish(maintenanceapp.ProfileEvaluationFinishInput{

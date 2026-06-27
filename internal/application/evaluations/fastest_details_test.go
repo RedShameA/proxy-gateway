@@ -12,7 +12,7 @@ func TestBuildFastestDetailsIncludesCandidateFailureSelectionAndLatency(t *testi
 		CurrentNodeID:     "node-current",
 		CurrentDurationMS: 120,
 		SelectedNodeID:    "node-best",
-		SwitchReason:      "candidate_clearly_better",
+		SwitchReason:      SwitchReasonCandidateClearlyBetter,
 	})
 
 	if details["test_url"] != "https://example.test/probe" || details["candidate_count"] != 3 || details["failure_count"] != 1 {
@@ -24,7 +24,7 @@ func TestBuildFastestDetailsIncludesCandidateFailureSelectionAndLatency(t *testi
 	if details["best_latency_ms"] != int64(80) || details["current_latency_ms"] != int64(120) {
 		t.Fatalf("latencies = %#v", details)
 	}
-	if details["switch_reason"] != "candidate_clearly_better" {
+	if details["switch_reason"] != SwitchReasonCandidateClearlyBetter {
 		t.Fatalf("switch_reason = %#v", details["switch_reason"])
 	}
 }

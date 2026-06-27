@@ -84,20 +84,20 @@ func ValidateConfig(record *ConfigRecord, deps ConfigValidationDeps) error {
 	}
 	record.EgressCountryMode = strings.ToLower(strings.TrimSpace(record.EgressCountryMode))
 	if record.EgressCountryMode == "" {
-		record.EgressCountryMode = "include"
+		record.EgressCountryMode = domainprofile.EgressCountryModeInclude
 	}
-	if record.EgressCountryMode != "include" && record.EgressCountryMode != "exclude" {
+	if record.EgressCountryMode != domainprofile.EgressCountryModeInclude && record.EgressCountryMode != domainprofile.EgressCountryModeExclude {
 		return ErrEgressCountryModeInvalid
 	}
 	record.NodeSourceMode = domainprofile.NormalizeNodeSourceMode(record.NodeSourceMode, record.SourceIDs, record.ManualOnly)
-	if record.NodeSourceMode == "specific_subscriptions" && len(record.SourceIDs) == 0 {
+	if record.NodeSourceMode == domainprofile.NodeSourceModeSpecificSubscriptions && len(record.SourceIDs) == 0 {
 		return ErrSelectedSourcesRequired
 	}
-	record.ManualOnly = record.NodeSourceMode == "manual"
+	record.ManualOnly = record.NodeSourceMode == domainprofile.NodeSourceModeManual
 	record.Type = strings.TrimSpace(record.Type)
 
 	switch record.Type {
-	case "fixed_node":
+	case domainprofile.TypeFixedNode:
 		if record.FixedNodeID == "" {
 			return ErrFixedNodeRequired
 		}
@@ -109,24 +109,24 @@ func ValidateConfig(record *ConfigRecord, deps ConfigValidationDeps) error {
 		record.ExitNodeIDs = []string{}
 		record.ChainEvaluationMode = ""
 		record.NodeStickyEnabled = false
-		record.State = "ready"
-	case "fastest":
+		record.State = domainprofile.StateReady
+	case domainprofile.TypeFastest:
 		if err := validateProfileTestURL(record.TestURL, deps.DefaultTestURL); err != nil {
 			return err
 		}
 		record.TestURL = EffectiveTestURL(record.TestURL, deps.DefaultTestURL)
 		record.CurrentExitNodeID = ""
 		record.State = record.DynamicStateAfterUpdate()
-	case "random":
+	case domainprofile.TypeRandom:
 		record.CurrentNodeID = ""
 		record.CurrentExitNodeID = ""
 		record.NodeStickyEnabled = false
-		record.State = "ready"
-	case "chain":
+		record.State = domainprofile.StateReady
+	case domainprofile.TypeChain:
 		if len(record.ExitNodeIDs) == 0 && record.FixedNodeID != "" {
 			record.ExitNodeIDs = []string{record.FixedNodeID}
 		}
-		if err := domainprofile.ValidateChainExitNodes(record.ExitNodeIDs, "end_to_end"); err != nil {
+		if err := domainprofile.ValidateChainExitNodes(record.ExitNodeIDs, domainprofile.ChainEvaluationModeEndToEnd); err != nil {
 			return err
 		}
 		for _, exitNodeID := range record.ExitNodeIDs {
@@ -139,7 +139,7 @@ func ValidateConfig(record *ConfigRecord, deps ConfigValidationDeps) error {
 		if err := domainprofile.ValidateChainExitNodes(record.ExitNodeIDs, record.ChainEvaluationMode); err != nil {
 			return err
 		}
-		if record.ChainEvaluationMode == "end_to_end" {
+		if record.ChainEvaluationMode == domainprofile.ChainEvaluationModeEndToEnd {
 			if err := validateProfileTestURL(record.TestURL, deps.DefaultTestURL); err != nil {
 				return err
 			}

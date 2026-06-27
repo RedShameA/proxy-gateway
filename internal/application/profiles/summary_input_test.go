@@ -3,6 +3,8 @@ package profiles
 import (
 	"reflect"
 	"testing"
+
+	domainprofile "proxygateway/internal/domain/profile"
 )
 
 func TestSummaryInputFromConfigMapsRecordAndCounts(t *testing.T) {
@@ -10,13 +12,13 @@ func TestSummaryInputFromConfigMapsRecordAndCounts(t *testing.T) {
 	input := SummaryInputFromConfig(ConfigRecord{
 		ID:                           "profile_1",
 		Name:                         "Work",
-		Type:                         "fastest",
-		State:                        "ready",
+		Type:                         domainprofile.TypeFastest,
+		State:                        domainprofile.StateReady,
 		ProfileIdentifier:            "work",
 		CurrentNodeID:                "node_1",
-		NodeSourceMode:               "manual",
+		NodeSourceMode:               domainprofile.NodeSourceModeManual,
 		EgressCountry:                "JP",
-		EgressCountryMode:            "include",
+		EgressCountryMode:            domainprofile.EgressCountryModeInclude,
 		EgressCountries:              []string{"JP"},
 		NameIncludeRegex:             "tokyo",
 		CandidateLimit:               5,
@@ -27,7 +29,7 @@ func TestSummaryInputFromConfigMapsRecordAndCounts(t *testing.T) {
 		ConfigVersion:                3,
 		LastEvaluatedAt:              456,
 		LastError:                    "last error",
-		SwitchReason:                 "candidate_better",
+		SwitchReason:                 domainprofile.SwitchReasonCandidateClearlyBetter,
 	}, currentPath, CredentialCounts{Total: 2, Enabled: 1})
 
 	if input.ID != "profile_1" || input.Name != "Work" || !reflect.DeepEqual(input.CurrentPath, currentPath) {
@@ -39,7 +41,7 @@ func TestSummaryInputFromConfigMapsRecordAndCounts(t *testing.T) {
 	if input.EgressCountries[0] != "JP" || input.NameIncludeRegex != "tokyo" {
 		t.Fatalf("filter fields = %#v", input)
 	}
-	if input.LastEvaluatedAt != 456 || input.SwitchReason != "candidate_better" || input.LastError != "last error" {
+	if input.LastEvaluatedAt != 456 || input.SwitchReason != domainprofile.SwitchReasonCandidateClearlyBetter || input.LastError != "last error" {
 		t.Fatalf("evaluation fields = %#v", input)
 	}
 }

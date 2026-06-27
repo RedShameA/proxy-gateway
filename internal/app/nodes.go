@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	apperrors "proxygateway/internal/application/apperrors"
+	maintenanceapp "proxygateway/internal/application/maintenance"
 	applicationnodes "proxygateway/internal/application/nodes"
 	appsubscriptions "proxygateway/internal/application/subscriptions"
 )
@@ -164,7 +165,7 @@ func (g *Gateway) enqueueNodeObservationForManualImport(nodeID, nodeName string)
 	if probeURL == "" {
 		probeURL = defaultEgressIPProbeURL
 	}
-	_, _ = g.createNodeObservationRun("manual_node_import", "single_node", []nodeRecord{{ID: nodeID, Name: nodeName, Enabled: true}}, probeURL)
+	_, _ = g.createNodeObservationRun(maintenanceapp.TriggerManualNodeImport, maintenanceapp.NodeObservationScopeSingleNode, []nodeRecord{{ID: nodeID, Name: nodeName, Enabled: true}}, probeURL)
 	g.notifyMaintenanceRunner()
 }
 

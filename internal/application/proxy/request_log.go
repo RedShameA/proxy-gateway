@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+
+	domainprofile "proxygateway/internal/domain/profile"
 )
 
 type ProxyCredentialSnapshot struct {
@@ -155,7 +157,7 @@ type RequestLogRepository interface {
 func RequestLogEntryToMap(item RequestLogEntry, nowMillis int64) map[string]any {
 	result, successValue := requestLogResult(item.State, item.Success)
 	durationMS := item.DurationMS
-	if item.State == "running" && durationMS <= 0 {
+	if item.State == RequestLogStateRunning && durationMS <= 0 {
 		durationMS = nowMillis - item.Timestamp
 		if durationMS <= 0 {
 			durationMS = 1
@@ -238,13 +240,13 @@ func BuildRequestLogFailure(input RequestLogFailureInput) RequestLogFailureRecor
 }
 
 func requestLogResult(state string, success *bool) (string, any) {
-	if state == "running" {
-		return "running", nil
+	if state == RequestLogStateRunning {
+		return RequestLogResultRunning, nil
 	}
 	if success != nil && *success {
-		return "success", true
+		return RequestLogResultSuccess, true
 	}
-	return "failure", false
+	return RequestLogResultFailure, false
 }
 
 func parseRequestLogProxyPath(raw string) any {
@@ -279,11 +281,11 @@ func proxyPathJSON(path ProxyPathSnapshot) string {
 	var value map[string]any
 	if path.FrontNode.ID != "" && path.ExitNode.ID != "" {
 		value = map[string]any{
-			"path_type":             "chain",
+			"path_type":             domainprofile.TypeChain,
 			"front_node":            nodePathSummary(path.FrontNode),
 			"exit_node":             nodePathSummary(path.ExitNode),
 			"final_egress_country":  "__unknown__",
-			"chain_evaluation_mode": "end_to_end",
+			"chain_evaluation_mode": domainprofile.ChainEvaluationModeEndToEnd,
 			"latency_ms":            nil,
 			"latency_kind":          nil,
 			"evaluated_at":          nil,

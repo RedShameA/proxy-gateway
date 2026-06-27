@@ -1,18 +1,22 @@
 package profiles
 
-import "testing"
+import (
+	"testing"
+
+	domainprofile "proxygateway/internal/domain/profile"
+)
 
 func TestConfigRecordDomainSnapshot(t *testing.T) {
 	record := ConfigRecord{
-		Type:                         "chain",
+		Type:                         domainprofile.TypeChain,
 		FixedNodeID:                  "exit_1",
 		ExitNodeIDs:                  []string{"exit_1"},
-		ChainEvaluationMode:          "chain_link",
+		ChainEvaluationMode:          domainprofile.ChainEvaluationModeChainLink,
 		TestURL:                      "https://example.com",
 		EgressCountry:                "JP",
-		EgressCountryMode:            "include",
+		EgressCountryMode:            domainprofile.EgressCountryModeInclude,
 		EgressCountries:              []string{"JP"},
-		NodeSourceMode:               "subscriptions",
+		NodeSourceMode:               domainprofile.NodeSourceModeSubscriptions,
 		SourceIDs:                    []string{"sub_1"},
 		Protocols:                    []string{"vmess"},
 		NameIncludeRegex:             "tokyo",
@@ -24,9 +28,9 @@ func TestConfigRecordDomainSnapshot(t *testing.T) {
 		AbsoluteLatencyImprovementMS: 100,
 		CurrentNodeID:                "front_1",
 		CurrentExitNodeID:            "exit_1",
-		State:                        "ready",
+		State:                        domainprofile.StateReady,
 		CurrentPathLatencyMS:         123,
-		SwitchReason:                 "completed",
+		SwitchReason:                 domainprofile.SwitchReasonCurrentPathStillBest,
 		LastEvaluationDetailsJSON:    "{}",
 		AutoEvaluationEnabled:        true,
 		AutoEvaluationInterval:       300,
@@ -36,7 +40,7 @@ func TestConfigRecordDomainSnapshot(t *testing.T) {
 
 	snapshot := record.DomainSnapshot()
 
-	if snapshot.Type != "chain" || snapshot.FixedNodeID != "exit_1" || snapshot.CurrentNodeID != "front_1" {
+	if snapshot.Type != domainprofile.TypeChain || snapshot.FixedNodeID != "exit_1" || snapshot.CurrentNodeID != "front_1" {
 		t.Fatalf("snapshot identity/path = %#v", snapshot)
 	}
 	if snapshot.MinEvaluationIntervalSeconds != 30 || snapshot.AutoEvaluationInterval != 300 || snapshot.ConfigVersion != 7 {
@@ -49,28 +53,28 @@ func TestConfigRecordDomainSnapshot(t *testing.T) {
 
 func TestApplyDomainSnapshotUpdatesRuntimeFields(t *testing.T) {
 	record := ConfigRecord{
-		Type:        "fastest",
+		Type:        domainprofile.TypeFastest,
 		FixedNodeID: "node_keep",
-		State:       "running",
+		State:       domainprofile.StateRunning,
 	}
 	snapshot := record.DomainSnapshot()
 	snapshot.CurrentNodeID = "node_1"
 	snapshot.CurrentExitNodeID = "exit_1"
 	snapshot.CurrentPathLatencyMS = 88
-	snapshot.SwitchReason = "candidate_better"
+	snapshot.SwitchReason = domainprofile.SwitchReasonCandidateClearlyBetter
 	snapshot.LastEvaluationDetailsJSON = `{"ok":true}`
-	snapshot.State = "ready"
+	snapshot.State = domainprofile.StateReady
 	snapshot.ConfigVersion = 3
 
 	ApplyDomainSnapshot(&record, snapshot)
 
-	if record.Type != "fastest" || record.FixedNodeID != "node_keep" {
+	if record.Type != domainprofile.TypeFastest || record.FixedNodeID != "node_keep" {
 		t.Fatalf("stable config fields changed = %#v", record)
 	}
-	if record.CurrentNodeID != "node_1" || record.CurrentExitNodeID != "exit_1" || record.State != "ready" {
+	if record.CurrentNodeID != "node_1" || record.CurrentExitNodeID != "exit_1" || record.State != domainprofile.StateReady {
 		t.Fatalf("runtime fields = %#v", record)
 	}
-	if record.CurrentPathLatencyMS != 88 || record.SwitchReason != "candidate_better" || record.ConfigVersion != 3 {
+	if record.CurrentPathLatencyMS != 88 || record.SwitchReason != domainprofile.SwitchReasonCandidateClearlyBetter || record.ConfigVersion != 3 {
 		t.Fatalf("runtime detail fields = %#v", record)
 	}
 }

@@ -1,5 +1,7 @@
 package profiles
 
+import domainprofile "proxygateway/internal/domain/profile"
+
 type SummaryInput struct {
 	ID                      string
 	Name                    string
@@ -88,7 +90,7 @@ func BuildSummary(input SummaryInput) Summary {
 		MinEvaluationInterval:        input.MinEvaluationInterval,
 		AutoEvaluationEnabled:        input.AutoEvaluationEnabled,
 		AutoEvaluationInterval:       input.AutoEvaluationInterval,
-		NodeStickyEnabled:            input.NodeStickyEnabled && (input.Type == "fastest" || input.Type == "chain"),
+		NodeStickyEnabled:            input.NodeStickyEnabled && (input.Type == domainprofile.TypeFastest || input.Type == domainprofile.TypeChain),
 		ConfigVersion:                input.ConfigVersion,
 		CurrentPath:                  input.CurrentPath,
 		ProxyCredentialsCount:        input.ProxyCredentialsCount,

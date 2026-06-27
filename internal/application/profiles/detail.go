@@ -108,7 +108,7 @@ func BuildDetail(input DetailInput) Detail {
 		fixedNodeID = input.FixedNodeID
 	}
 	chainEvaluationMode := any(nil)
-	if input.Summary.Type == "chain" {
+	if input.Summary.Type == domainprofile.TypeChain {
 		chainEvaluationMode = domainprofile.NormalizeChainEvaluationMode(input.ChainEvaluationMode)
 	}
 	lastEvaluationDetails := input.LastEvaluationDetails
@@ -170,9 +170,9 @@ func BuildDetail(input DetailInput) Detail {
 
 func evaluationScheduleMode(enabled bool) string {
 	if enabled {
-		return "custom"
+		return ScheduleModeCustom
 	}
-	return "disabled"
+	return ScheduleModeDisabled
 }
 
 func nonNilStrings(values []string) []string {

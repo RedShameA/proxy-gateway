@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	apperrors "proxygateway/internal/application/apperrors"
+	appgeoip "proxygateway/internal/application/geoip"
+	appmaintenance "proxygateway/internal/application/maintenance"
 	applicationnodes "proxygateway/internal/application/nodes"
 	applicationprofiles "proxygateway/internal/application/profiles"
 	"proxygateway/internal/interfaces/httpapi"
@@ -138,7 +140,7 @@ func (g *Gateway) httpAPIHandler() http.Handler {
 			Auth:   adminAuth,
 			Status: func() any { return g.geoIPStatus() },
 			Update: func() (httpapi.GeoIPUpdateResult, error) {
-				run, err := g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, "manual", "country.mmdb", "GeoIP Database", 1, map[string]any{"source": "MetaCubeX"})
+				run, err := g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, appmaintenance.TriggerManual, "country.mmdb", "GeoIP Database", 1, map[string]any{"source": appgeoip.SourceMetaCubeX})
 				if err != nil {
 					return httpapi.GeoIPUpdateResult{}, apperrors.New(apperrors.KindInternal, "create geoip update run", err)
 				}

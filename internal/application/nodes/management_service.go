@@ -27,7 +27,7 @@ func (s ManagementService) CreateManual(ctx context.Context, node OutboundNode) 
 		NewNodeID: s.NewNodeID,
 	}.Create(ctx, CreateCommand{
 		Node:      node,
-		Source:    SourceInput{ID: "manual", Name: "Manual", Type: "manual"},
+		Source:    SourceInput{ID: SourceTypeManual, Name: "Manual", Type: SourceTypeManual},
 		NowMillis: s.now(),
 	})
 }

@@ -59,6 +59,7 @@ const detailKeyLabels: Record<string, string> = {
   probe_url: '探测地址',
   profile_id: '策略',
   profile_state: '策略状态',
+  reason: '原因',
   removed_count: '移除数',
   retained_count: '保留数',
   sample_failures: '失败样例',
@@ -159,10 +160,10 @@ function detailKeyLabel(key: string): string {
 }
 
 function formatDetailString(fieldKey: string, value: string): ReactNode {
-  if (fieldKey === 'switch_decision' || fieldKey === 'switch_reason') {
+  if (fieldKey === 'switch_decision' || fieldKey === 'switch_reason' || fieldKey === 'reason') {
     return switchReasonLabel(value);
   }
-  if (fieldKey === 'profile_state') {
+  if (fieldKey === 'profile_state' || fieldKey === 'current_path_result') {
     return runProfileStateLabel(value);
   }
   if (fieldKey === 'target_scope') {

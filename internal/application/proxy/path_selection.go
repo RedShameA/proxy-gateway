@@ -30,9 +30,9 @@ type PathSelectionDeps struct {
 
 func SelectPathForCredential(credential CredentialRecord, cfg appprofiles.ConfigRecord, deps PathSelectionDeps) (SelectedPath, error) {
 	switch cfg.Type {
-	case "random":
+	case domainprofile.TypeRandom:
 		return selectRandomPath(credential, cfg, deps)
-	case "chain":
+	case domainprofile.TypeChain:
 		return selectChainPath(credential, cfg, deps)
 	default:
 		return selectSinglePath(credential, cfg, deps)
@@ -88,7 +88,7 @@ func selectSinglePath(credential CredentialRecord, cfg appprofiles.ConfigRecord,
 	if !appprofiles.StateHasReusablePath(cfg.State) || cfg.CurrentNodeID == "" {
 		return SelectedPath{}, ErrNoUsableProxyPath
 	}
-	if cfg.Type == "fastest" && deps.ProfileNodeMatchesCandidateFilter != nil && !deps.ProfileNodeMatchesCandidateFilter(cfg.ID, cfg.CurrentNodeID, cfg.CandidateFilter()) {
+	if cfg.Type == domainprofile.TypeFastest && deps.ProfileNodeMatchesCandidateFilter != nil && !deps.ProfileNodeMatchesCandidateFilter(cfg.ID, cfg.CurrentNodeID, cfg.CandidateFilter()) {
 		return SelectedPath{}, ErrNoUsableProxyPath
 	}
 	node, err := loadUsableNode(cfg.CurrentNodeID, deps.LoadUsableNode)

@@ -217,7 +217,7 @@ func (r SubscriptionSourceRepositoryTx) InvalidateProfilesForDeletedSubscription
 		}
 		var sourceIDs []string
 		_ = json.Unmarshal([]byte(sourceIDsJSON), &sourceIDs)
-		if domainprofile.NormalizeNodeSourceMode(nodeSourceMode, sourceIDs, manualOnly == 1) != "specific_subscriptions" {
+		if domainprofile.NormalizeNodeSourceMode(nodeSourceMode, sourceIDs, manualOnly == 1) != domainprofile.NodeSourceModeSpecificSubscriptions {
 			continue
 		}
 		for _, sourceID := range sourceIDs {

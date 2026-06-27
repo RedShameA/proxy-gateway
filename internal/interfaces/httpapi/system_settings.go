@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	appmaintenance "proxygateway/internal/application/maintenance"
 	appsettings "proxygateway/internal/application/settings"
 )
 
@@ -333,13 +334,13 @@ func applyMaintenanceSchedulePatches(settings appsettings.MaintenanceSettings, p
 			interval = *patch.IntervalSeconds
 		}
 		switch patch.Key {
-		case "subscription_refresh":
+		case appmaintenance.RunTypeSubscriptionRefresh:
 			settings.SubscriptionRefreshSeconds = scheduleIntervalValue(enabled, interval, settings.SubscriptionRefreshSeconds, appsettings.DefaultSubscriptionRefreshSeconds)
-		case "node_observation":
+		case appmaintenance.RunTypeNodeObservation:
 			settings.NodeObservationSeconds = scheduleIntervalValue(enabled, interval, settings.NodeObservationSeconds, appsettings.DefaultNodeObservationSeconds)
-		case "profile_evaluation":
+		case appmaintenance.RunTypeProfileEvaluation:
 			settings.ProfileEvaluationSeconds = scheduleIntervalValue(enabled, interval, settings.ProfileEvaluationSeconds, appsettings.DefaultProfileEvaluationSeconds)
-		case "geoip_update":
+		case appmaintenance.RunTypeGeoIPUpdate:
 			if !enabled {
 				settings.GeoIPUpdateTime = ""
 			} else if settings.GeoIPUpdateTime == "" {
@@ -365,10 +366,10 @@ func scheduleIntervalValue(enabled bool, requested, current, fallback int) int {
 
 func maintenanceScheduleItems(s appsettings.MaintenanceSettings) []map[string]any {
 	return []map[string]any{
-		{"key": "subscription_refresh", "label": "订阅刷新", "enabled": s.SubscriptionRefreshSeconds > 0, "interval_seconds": s.SubscriptionRefreshSeconds},
-		{"key": "node_observation", "label": "节点观测", "enabled": s.NodeObservationSeconds > 0, "interval_seconds": s.NodeObservationSeconds},
-		{"key": "profile_evaluation", "label": "策略评估", "enabled": s.ProfileEvaluationSeconds > 0, "interval_seconds": s.ProfileEvaluationSeconds},
-		{"key": "geoip_update", "label": "GeoIP 更新", "enabled": s.GeoIPUpdateTime != "", "interval_seconds": 86400},
+		{"key": appmaintenance.RunTypeSubscriptionRefresh, "label": "订阅刷新", "enabled": s.SubscriptionRefreshSeconds > 0, "interval_seconds": s.SubscriptionRefreshSeconds},
+		{"key": appmaintenance.RunTypeNodeObservation, "label": "节点观测", "enabled": s.NodeObservationSeconds > 0, "interval_seconds": s.NodeObservationSeconds},
+		{"key": appmaintenance.RunTypeProfileEvaluation, "label": "策略评估", "enabled": s.ProfileEvaluationSeconds > 0, "interval_seconds": s.ProfileEvaluationSeconds},
+		{"key": appmaintenance.RunTypeGeoIPUpdate, "label": "GeoIP 更新", "enabled": s.GeoIPUpdateTime != "", "interval_seconds": 86400},
 	}
 }
 

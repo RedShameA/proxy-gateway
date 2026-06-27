@@ -26,7 +26,7 @@ func (r RequestLogRepository) InsertStart(ctx context.Context, record appproxy.R
 		`INSERT INTO request_logs (
 			id, ts, proxy_credential_id, proxy_credential, access_profile_id, access_profile, access_profile_identifier,
 			target_host, proxy_path, proxy_path_json, state, success, failure_stage, error, duration_ms, ingress_bytes, egress_bytes, http_status
-		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', NULL, '', '', 0, 0, 0, 0)`,
+		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', 0, 0, 0, 0)`,
 		record.ID,
 		record.Timestamp,
 		record.ProxyCredentialID,
@@ -37,6 +37,7 @@ func (r RequestLogRepository) InsertStart(ctx context.Context, record appproxy.R
 		record.TargetHost,
 		record.ProxyPath,
 		record.ProxyPathJSON,
+		appproxy.RequestLogStateRunning,
 	)
 	return err
 }
@@ -49,7 +50,7 @@ func (r RequestLogRepository) Finish(ctx context.Context, record appproxy.Reques
 	_, err := r.db.ExecContext(
 		ctx,
 		`UPDATE request_logs
-		    SET state = 'completed',
+		    SET state = ?,
 		        success = ?,
 		        failure_stage = ?,
 		        error = ?,
@@ -58,6 +59,7 @@ func (r RequestLogRepository) Finish(ctx context.Context, record appproxy.Reques
 		        egress_bytes = ?,
 		        http_status = ?
 		  WHERE id = ?`,
+		appproxy.RequestLogStateCompleted,
 		successInt,
 		record.FailureStage,
 		record.Error,
@@ -76,12 +78,13 @@ func (r RequestLogRepository) InsertFailure(ctx context.Context, record appproxy
 		`INSERT INTO request_logs (
 			id, ts, proxy_credential_id, proxy_credential, access_profile_id, access_profile, access_profile_identifier,
 			target_host, proxy_path, proxy_path_json, state, success, failure_stage, error, duration_ms, ingress_bytes, egress_bytes, http_status
-		 ) VALUES (?, ?, '', '', '', ?, ?, ?, '', '', 'completed', 0, ?, ?, ?, 0, 0, ?)`,
+		 ) VALUES (?, ?, '', '', '', ?, ?, ?, '', '', ?, 0, ?, ?, ?, 0, 0, ?)`,
 		record.ID,
 		record.Timestamp,
 		record.AccessProfile,
 		record.AccessProfileIdentifier,
 		record.TargetHost,
+		appproxy.RequestLogStateCompleted,
 		record.FailureStage,
 		record.Error,
 		record.DurationMS,
@@ -138,7 +141,7 @@ func (r RequestLogRepository) CountSince(ctx context.Context, cutoffMillis int64
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM request_logs WHERE ts > ?`, cutoffMillis).Scan(&counts.Total); err != nil {
 		return appproxy.RequestLogCounts{}, err
 	}
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM request_logs WHERE ts > ? AND state = 'completed' AND success = 0`, cutoffMillis).Scan(&counts.Failed); err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM request_logs WHERE ts > ? AND state = ? AND success = 0`, cutoffMillis, appproxy.RequestLogStateCompleted).Scan(&counts.Failed); err != nil {
 		return appproxy.RequestLogCounts{}, err
 	}
 	return counts, nil
@@ -153,9 +156,10 @@ func (r RequestLogRepository) ListRecentFailures(ctx context.Context, limit int)
 		`SELECT id, ts, proxy_credential_id, proxy_credential, access_profile_id, access_profile, access_profile_identifier,
 		        target_host, proxy_path, proxy_path_json, state, success, failure_stage, error, duration_ms, ingress_bytes, egress_bytes, http_status
 		   FROM request_logs
-		  WHERE state = 'completed' AND success = 0
+		  WHERE state = ? AND success = 0
 		  ORDER BY ts DESC
 		  LIMIT ?`,
+		appproxy.RequestLogStateCompleted,
 		limit,
 	)
 	if err != nil {
@@ -204,18 +208,23 @@ func requestLogListWhere(filter appproxy.RequestLogListFilter) (string, []any) {
 		args = append(args, "%"+value+"%")
 	}
 	switch strings.ToLower(strings.TrimSpace(filter.State)) {
-	case "running":
-		clauses = append(clauses, "state = 'running'")
-	case "completed":
-		clauses = append(clauses, "state = 'completed'")
+	case appproxy.RequestLogStateRunning:
+		clauses = append(clauses, "state = ?")
+		args = append(args, appproxy.RequestLogStateRunning)
+	case appproxy.RequestLogStateCompleted:
+		clauses = append(clauses, "state = ?")
+		args = append(args, appproxy.RequestLogStateCompleted)
 	}
 	switch strings.ToLower(strings.TrimSpace(filter.Result)) {
-	case "true", "1", "success", "succeeded":
-		clauses = append(clauses, "state = 'completed' AND success = 1")
-	case "false", "0", "failure", "failed":
-		clauses = append(clauses, "state = 'completed' AND success = 0")
-	case "running":
-		clauses = append(clauses, "state = 'running'")
+	case "true", "1", appproxy.RequestLogResultSuccess, "succeeded":
+		clauses = append(clauses, "state = ? AND success = 1")
+		args = append(args, appproxy.RequestLogStateCompleted)
+	case "false", "0", appproxy.RequestLogResultFailure, "failed":
+		clauses = append(clauses, "state = ? AND success = 0")
+		args = append(args, appproxy.RequestLogStateCompleted)
+	case appproxy.RequestLogResultRunning:
+		clauses = append(clauses, "state = ?")
+		args = append(args, appproxy.RequestLogStateRunning)
 	}
 	if len(clauses) == 0 {
 		return "", args

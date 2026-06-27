@@ -101,8 +101,17 @@ describe('run labels', () => {
     expect(runResultLabel('success')).toBe('成功');
     expect(runTriggerSourceLabel('access_profile_change')).toBe('策略配置变更');
     expect(runTriggerSourceLabel('current_node_observed')).toBe('原节点移除后重评');
+    expect(runTriggerSourceLabel('current_node_removed')).toBe('当前节点已移除');
     expect(runReasonLabel('expired_after_restart')).toBe('重启后过期取消');
     expect(runReasonLabel('no_importable_nodes')).toBe('无可导入节点');
+    expect(runReasonLabel('unknown_run_type')).toBe('未知维护任务类型');
+    expect(runReasonLabel('current_node_removed')).toBe('当前节点已移除');
+    expect(runReasonLabel('selected_node_removed')).toBe('选中节点已移除');
+    expect(runReasonLabel('access_profile_change')).toBe('策略配置变更');
+    expect(runReasonLabel('missing_fixed_node')).toBe('固定节点不可用或不存在');
+    expect(runReasonLabel('candidate_filter_error')).toBe('候选过滤失败');
+    expect(runReasonLabel('invalid_chain_config')).toBe('链式策略配置无效');
+    expect(runReasonLabel('missing_exit_node')).toBe('出口节点不可用或不存在');
   });
 });
 
@@ -147,6 +156,11 @@ describe('switchReasonLabel', () => {
     expect(switchReasonLabel('current_path_reused_after_failure')).toBe('当前路径探测失败，暂时保留旧路径');
     expect(switchReasonLabel('candidate_not_clearly_better')).toBe('候选路径提升未达切换阈值');
     expect(switchReasonLabel('current_path_failed_switch')).toBe('当前路径探测失败，已切换到可用路径');
+    expect(switchReasonLabel('access_profile_change')).toBe('策略配置变更');
+    expect(switchReasonLabel('current_node_removed')).toBe('当前节点已移除');
+    expect(switchReasonLabel('selected_node_removed')).toBe('选中节点已移除');
+    expect(switchReasonLabel('missing_fixed_node')).toBe('固定节点不可用或不存在');
+    expect(switchReasonLabel('manual_switch_requested')).toBe('手动切换请求');
   });
 });
 
@@ -323,6 +337,29 @@ describe('pathSummaryText', () => {
   it('returns - for null', () => {
     expect(pathSummaryText(null)).toBe('-');
   });
+
+  it('formats single and chain path summaries', () => {
+    const country = { value: 'JP', iso_code: 'JP', name_zh: '日本', is_unknown: false };
+
+    expect(pathSummaryText({
+      path_type: 'single',
+      node: { id: 'node_1', name: 'Tokyo', protocol: 'vmess', server: 'example.com', server_port: 443, egress_ip: null, egress_country: country, observation_latency_ms: null, last_observed_at: null },
+      latency_ms: 120,
+      latency_kind: 'end_to_end',
+      evaluated_at: null,
+    })).toBe('Tokyo (vmess) — 日本 (JP) — 120ms');
+
+    expect(pathSummaryText({
+      path_type: 'chain',
+      front_node: { id: 'front_1', name: 'Front', protocol: 'http', server: 'front.example.com', server_port: 8080, egress_ip: null, egress_country: country, observation_latency_ms: null, last_observed_at: null },
+      exit_node: { id: 'exit_1', name: 'Exit', protocol: 'socks5', server: 'exit.example.com', server_port: 1080, egress_ip: null, egress_country: country, observation_latency_ms: null, last_observed_at: null },
+      final_egress_country: country,
+      chain_evaluation_mode: 'chain_link',
+      latency_ms: 80,
+      latency_kind: 'chain_link',
+      evaluated_at: null,
+    })).toBe('Front → Exit — 日本 (JP) — 80ms');
+  });
 });
 
 describe('egressCountryModeLabel', () => {
@@ -338,5 +375,63 @@ describe('sourceModeLabel', () => {
     expect(sourceModeLabel('manual')).toBe('仅手动导入');
     expect(sourceModeLabel('subscription')).toBe('仅订阅');
     expect(sourceModeLabel('selected_sources')).toBe('指定来源');
+  });
+});
+
+describe('stable API enum display coverage', () => {
+  it('covers maintenance run enums without leaking raw codes', () => {
+    const runTypes = ['subscription_refresh', 'node_observation', 'profile_evaluation', 'profile_switch', 'geoip_update', 'log_cleanup', 'startup_cleanup'];
+    const runTriggers = ['scheduled', 'manual', 'startup', 'access_profile_change', 'node_observation', 'subscription_refresh', 'current_node_removed', 'current_node_observed', 'country_profile_unknown_country', 'pending_rerun', 'manual_node_import'];
+    const runStates = ['queued', 'running', 'finished'];
+    const runResults = ['success', 'warning', 'failure', 'skipped', 'cancelled'];
+    const runReasons = [
+      'completed', 'partial_failure', 'all_failed', 'no_targets', 'previous_run_still_running',
+      'waiting_for_observation', 'replaced_by_manual_run', 'expired_after_restart',
+      'min_interval_not_reached', 'superseded_by_config_version', 'profile_load_failed',
+      'profile_type_not_evaluable', 'current_path_degraded', 'evaluation_failed',
+      'unknown_run_type', 'subscription_not_found', 'fetch_failed', 'parse_failed',
+      'import_failed', 'no_importable_nodes', 'geoip_service_unavailable', 'geoip_update_failed',
+      'request_log_cleanup_failed', 'maintenance_history_cleanup_failed',
+    ];
+
+    for (const code of runTypes) expect(runTypeLabel(code)).not.toBe(code);
+    for (const code of runTriggers) expect(runTriggerSourceLabel(code)).not.toBe(code);
+    for (const code of runStates) expect(runStateLabel(code)).not.toBe(code);
+    for (const code of runResults) expect(runResultLabel(code)).not.toBe(code);
+    for (const code of runReasons) expect(runReasonLabel(code)).not.toBe(code);
+  });
+
+  it('covers profile path and switch enums without leaking raw codes', () => {
+    const switchReasons = [
+      'initial_selection', 'current_path_still_best', 'candidate_not_clearly_better',
+      'candidate_clearly_better', 'current_path_failed_switch',
+      'current_path_reused_after_failure', 'access_profile_change', 'current_node_removed',
+      'selected_node_removed', 'missing_fixed_node', 'force_switch', 'manual_switch_requested',
+      'all_candidates_failed', 'no_candidate', 'candidate_filter_error',
+      'invalid_chain_config', 'missing_exit_node',
+    ];
+
+    for (const code of switchReasons) {
+      expect(switchReasonLabel(code)).not.toBe(code);
+      expect(runReasonLabel(code)).not.toBe('其他原因');
+    }
+    expect(chainEvaluationModeLabel('chain_link')).not.toBe('chain_link');
+    expect(chainEvaluationModeLabel('end_to_end')).not.toBe('end_to_end');
+    expect(latencyKindLabel('chain_link')).not.toBe('chain_link');
+    expect(latencyKindLabel('end_to_end')).not.toBe('end_to_end');
+  });
+
+  it('covers node subscription request log and filter enums', () => {
+    for (const code of ['enabled', 'disabled', 'usable', 'unusable', 'pending_observation']) {
+      expect(nodeStateLabel(code as never)).not.toBe(code);
+    }
+    for (const code of ['remote', 'local']) expect(subscriptionSourceLabel(code)).not.toBe(code);
+    for (const code of ['active', 'error', 'disabled']) expect(subscriptionStateLabel(code)).not.toBe(code);
+    for (const code of ['running', 'success', 'failure']) expect(logResultLabel(code)).not.toBe(code);
+    for (const code of ['authentication', 'profile_selection', 'path_selection', 'dial', 'proxy_handshake', 'upstream']) {
+      expect(failureStageLabel(code)).not.toBe(code);
+    }
+    for (const code of ['include', 'exclude']) expect(egressCountryModeLabel(code)).not.toBe(code);
+    for (const code of ['all', 'manual', 'subscription', 'selected_sources']) expect(sourceModeLabel(code)).not.toBe(code);
   });
 });

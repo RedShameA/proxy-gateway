@@ -1,15 +1,9 @@
 package subscriptions
 
-import "sort"
+import (
+	"sort"
 
-const (
-	skipReasonUnsupportedFunctionalOutbound = "unsupported_functional_outbound"
-	skipReasonMissingRequiredField          = "missing_required_field"
-	skipReasonMalformedEntry                = "malformed_entry"
-	skipReasonUnsupportedNodeType           = "unsupported_node_type"
-	skipReasonUnsupportedOption             = "unsupported_option"
-	skipReasonClashProxyGroupIgnored        = "clash_proxy_group_ignored"
-	skipReasonDuplicateNode                 = "duplicate_node"
+	appmaintenance "proxygateway/internal/application/maintenance"
 )
 
 type SkippedEntrySummary struct {
@@ -86,19 +80,19 @@ func nonEmptySkippedDetails(details []SkippedEntryDetail) []SkippedEntryDetail {
 
 func skippedReasonMessage(reason string) string {
 	switch reason {
-	case skipReasonUnsupportedFunctionalOutbound:
+	case SkippedReasonUnsupportedFunctionalOutbound:
 		return "功能出站：已跳过，因为它们不是可拨号 Nodes"
-	case skipReasonMissingRequiredField:
+	case SkippedReasonMissingRequiredField:
 		return "缺少必填字段：已跳过，需要补齐服务器、端口或协议认证字段"
-	case skipReasonMalformedEntry:
+	case SkippedReasonMalformedEntry:
 		return "格式错误：已跳过，条目不是有效的代理配置"
-	case skipReasonUnsupportedNodeType:
+	case SkippedReasonUnsupportedNodeType:
 		return "协议不支持：已跳过，当前 sing-box 拨号能力暂不支持该类型"
-	case skipReasonUnsupportedOption:
+	case SkippedReasonUnsupportedOption:
 		return "配置选项不支持：已跳过，当前协议引擎无法按该配置拨号"
-	case skipReasonClashProxyGroupIgnored:
+	case SkippedReasonClashProxyGroupIgnored:
 		return "策略组：已跳过，因为它们不是可拨号 Nodes"
-	case skipReasonDuplicateNode:
+	case SkippedReasonDuplicateNode:
 		return "重复节点：已跳过，因为同一个节点已在本次导入中出现"
 	default:
 		return reason
@@ -139,11 +133,11 @@ type RefreshFailureOutcome struct {
 
 func BuildRefreshSuccessOutcome(result RefreshImportResult) RefreshSuccessOutcome {
 	ignoredCount, ignoredSummary, skippedCount, skippedSummary := splitSkippedSummaries(result.SkippedEntrySummary)
-	runResult := "success"
-	reasonCode := "completed"
+	runResult := appmaintenance.ResultSuccess
+	reasonCode := appmaintenance.ReasonCompleted
 	if result.ImportedNodes == 0 {
-		runResult = "warning"
-		reasonCode = "no_importable_nodes"
+		runResult = appmaintenance.ResultWarning
+		reasonCode = appmaintenance.ReasonNoImportableNodes
 	}
 	return RefreshSuccessOutcome{
 		SubscriptionID:           result.SubscriptionID,
@@ -162,15 +156,15 @@ func BuildRefreshSuccessOutcome(result RefreshImportResult) RefreshSuccessOutcom
 func BuildRefreshFetchFailure(subscriptionID string) RefreshFailureOutcome {
 	return RefreshFailureOutcome{
 		SubscriptionID:   subscriptionID,
-		ReasonCode:       "fetch_failed",
+		ReasonCode:       appmaintenance.ReasonFetchFailed,
 		PersistLastError: true,
 	}
 }
 
 func BuildRefreshImportFailure(subscriptionID string, invalidContent bool) RefreshFailureOutcome {
-	reasonCode := "import_failed"
+	reasonCode := appmaintenance.ReasonImportFailed
 	if invalidContent {
-		reasonCode = "parse_failed"
+		reasonCode = appmaintenance.ReasonParseFailed
 	}
 	return RefreshFailureOutcome{
 		SubscriptionID:   subscriptionID,
@@ -207,7 +201,7 @@ func splitSkippedSummaries(rows []SkippedEntrySummary) (int, []SkippedEntrySumma
 	ignoredCount := 0
 	skippedCount := 0
 	for _, row := range rows {
-		if row.Reason == skipReasonClashProxyGroupIgnored || row.Reason == skipReasonUnsupportedFunctionalOutbound {
+		if row.Reason == SkippedReasonClashProxyGroupIgnored || row.Reason == SkippedReasonUnsupportedFunctionalOutbound {
 			ignoredRows = append(ignoredRows, row)
 			ignoredCount += row.Count
 			continue

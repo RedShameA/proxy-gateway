@@ -1,12 +1,5 @@
 package maintenance
 
-const (
-	ResultWarning   = "warning"
-	ResultFailure   = "failure"
-	ResultSkipped   = "skipped"
-	ResultCancelled = "cancelled"
-)
-
 type ProfileEvaluationFinishInput struct {
 	Detail           map[string]any
 	EvaluationDetail map[string]any
@@ -55,10 +48,10 @@ func BuildProfileEvaluationFinish(input ProfileEvaluationFinishInput) ProfileEva
 		lastError = input.LastError
 		if input.ProfileState == "degraded" {
 			result = ResultWarning
-			reasonCode = firstNonEmpty(input.SwitchReason, "current_path_degraded")
+			reasonCode = firstNonEmpty(input.SwitchReason, ReasonCurrentPathDegraded)
 		} else {
 			result = ResultFailure
-			reasonCode = firstNonEmpty(input.SwitchReason, "evaluation_failed")
+			reasonCode = firstNonEmpty(input.SwitchReason, ReasonEvaluationFailed)
 		}
 	}
 	return ProfileEvaluationFinish{

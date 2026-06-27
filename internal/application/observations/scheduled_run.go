@@ -1,5 +1,7 @@
 package observations
 
+import appmaintenance "proxygateway/internal/application/maintenance"
+
 type ScheduledAggregateRunPlan struct {
 	CreateRun         bool
 	FinishImmediately bool
@@ -18,16 +20,16 @@ func PlanScheduledAggregateRun(targets []NodeTarget, probeURL string, hasUnfinis
 	}
 	plan := ScheduledAggregateRunPlan{
 		CreateRun:     true,
-		TriggerSource: "scheduled",
-		Scope:         "all_nodes",
+		TriggerSource: appmaintenance.TriggerScheduled,
+		Scope:         appmaintenance.NodeObservationScopeAllNodes,
 		ProbeURL:      probeURL,
 		Targets:       append([]NodeTarget{}, targets...),
 		NotifyRunner:  !hasUnfinishedAggregate,
 	}
 	if hasUnfinishedAggregate {
 		plan.FinishImmediately = true
-		plan.Result = "skipped"
-		plan.ReasonCode = "previous_run_still_running"
+		plan.Result = appmaintenance.ResultSkipped
+		plan.ReasonCode = appmaintenance.ReasonPreviousRunStillRunning
 	}
 	return plan
 }
@@ -38,8 +40,8 @@ func PlanSubscriptionRefreshAggregateRun(targets []NodeTarget, probeURL string) 
 	}
 	return ScheduledAggregateRunPlan{
 		CreateRun:     true,
-		TriggerSource: "subscription_refresh",
-		Scope:         "all_nodes",
+		TriggerSource: appmaintenance.TriggerSubscriptionRefresh,
+		Scope:         appmaintenance.NodeObservationScopeAllNodes,
 		ProbeURL:      probeURL,
 		Targets:       append([]NodeTarget{}, targets...),
 		NotifyRunner:  true,

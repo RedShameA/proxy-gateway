@@ -123,7 +123,7 @@ func looksLikeJSONArray(text string) bool {
 
 func addClashProxyGroupSkips(summary SkippedEntrySummarySet, groups []map[string]any) {
 	for _, group := range groups {
-		summary.addDetail(skipReasonClashProxyGroupIgnored, SkippedEntryDetail{
+		summary.addDetail(SkippedReasonClashProxyGroupIgnored, SkippedEntryDetail{
 			Name:      strings.TrimSpace(anyString(group["name"])),
 			EntryType: strings.TrimSpace(anyString(group["type"])),
 		})
@@ -139,7 +139,7 @@ func deduplicateParsedNodes(nodes []ParsedNode, skippedSummary SkippedEntrySumma
 	for _, node := range nodes {
 		outboundJSON, err := normalizedNodeOutboundJSON(node)
 		if err != nil {
-			skippedSummary.addDetail(skipReasonUnsupportedOption, SkippedEntryDetail{
+			skippedSummary.addDetail(SkippedReasonUnsupportedOption, SkippedEntryDetail{
 				Name:      node.Name,
 				EntryType: node.Type,
 				Detail:    err.Error(),
@@ -148,7 +148,7 @@ func deduplicateParsedNodes(nodes []ParsedNode, skippedSummary SkippedEntrySumma
 		}
 		fingerprint := outboundFingerprint(outboundJSON)
 		if _, ok := seen[fingerprint]; ok {
-			skippedSummary.addDetail(skipReasonDuplicateNode, SkippedEntryDetail{
+			skippedSummary.addDetail(SkippedReasonDuplicateNode, SkippedEntryDetail{
 				Name:      node.Name,
 				EntryType: node.Type,
 			})

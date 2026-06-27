@@ -108,15 +108,15 @@ func BuildListItem(record Record, sources []SourceRecord, observation Observatio
 
 func NodeState(enabled bool, observation ObservationSnapshot) string {
 	if !enabled {
-		return "disabled"
+		return StateDisabled
 	}
 	if !observation.Found {
-		return "pending_observation"
+		return StatePendingObservation
 	}
 	if observation.Usable {
-		return "usable"
+		return StateUsable
 	}
-	return "unusable"
+	return StateUnusable
 }
 
 func SourceViews(sources []SourceRecord) []map[string]any {

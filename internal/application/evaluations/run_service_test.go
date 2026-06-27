@@ -24,7 +24,7 @@ func TestRunServiceEvaluateFastestSelectsBestNodeAndNotifiesObserver(t *testing.
 
 	ok := NewRunService(ports.deps()).EvaluateFastest(context.Background(), Target{
 		ID:      "profile_1",
-		Type:    "fastest",
+		Type:    domainprofile.TypeFastest,
 		TestURL: "https://example.test/generate_204",
 	}, RuntimeSettings{GlobalConcurrency: 2})
 
@@ -37,13 +37,13 @@ func TestRunServiceEvaluateFastestSelectsBestNodeAndNotifiesObserver(t *testing.
 	if got := stringValue(ports.releaseUpdate.CurrentNodeID); got != "node_best" {
 		t.Fatalf("selected node = %q, want node_best", got)
 	}
-	if got := stringValue(ports.releaseUpdate.SwitchReason); got != "candidate_clearly_better" {
+	if got := stringValue(ports.releaseUpdate.SwitchReason); got != SwitchReasonCandidateClearlyBetter {
 		t.Fatalf("switch reason = %q, want candidate_clearly_better", got)
 	}
 	if len(ports.fastestCandidateLogs) != 2 {
 		t.Fatalf("fastest candidate logs = %d, want 2", len(ports.fastestCandidateLogs))
 	}
-	if len(ports.fastestSelectionReasons) != 1 || ports.fastestSelectionReasons[0] != "candidate_clearly_better" {
+	if len(ports.fastestSelectionReasons) != 1 || ports.fastestSelectionReasons[0] != SwitchReasonCandidateClearlyBetter {
 		t.Fatalf("fastest selection logs = %v, want candidate_clearly_better", ports.fastestSelectionReasons)
 	}
 }
@@ -53,7 +53,7 @@ func TestRunServiceEvaluateFastestRecordsNoCandidateFailure(t *testing.T) {
 
 	ok := NewRunService(ports.deps()).EvaluateFastest(context.Background(), Target{
 		ID:   "profile_1",
-		Type: "fastest",
+		Type: domainprofile.TypeFastest,
 	}, RuntimeSettings{})
 
 	if ok {
@@ -63,10 +63,10 @@ func TestRunServiceEvaluateFastestRecordsNoCandidateFailure(t *testing.T) {
 		t.Fatalf("state updates = %d, want running and final failure", len(ports.stateUpdates))
 	}
 	final := ports.stateUpdates[len(ports.stateUpdates)-1]
-	if got := stringValue(final.State); got != "no_candidate" {
+	if got := stringValue(final.State); got != ProfileStateNoCandidate {
 		t.Fatalf("final state = %q, want no_candidate", got)
 	}
-	if got := stringValue(final.SwitchReason); got != "no_candidate" {
+	if got := stringValue(final.SwitchReason); got != SwitchReasonNoCandidate {
 		t.Fatalf("switch reason = %q, want no_candidate", got)
 	}
 }
@@ -87,7 +87,7 @@ func TestRunServiceEvaluateFastestFrontSelectsBestChainLinkAndNotifiesObserver(t
 
 	ok := NewRunService(ports.deps()).EvaluateFastestFront(context.Background(), Target{
 		ID:          "profile_1",
-		Type:        "chain",
+		Type:        domainprofile.TypeChain,
 		ExitNodeIDs: []string{"exit_1"},
 	}, RuntimeSettings{GlobalConcurrency: 2})
 
@@ -106,7 +106,7 @@ func TestRunServiceEvaluateFastestFrontSelectsBestChainLinkAndNotifiesObserver(t
 	if len(ports.chainCandidateLogs) != 2 {
 		t.Fatalf("chain candidate logs = %d, want 2", len(ports.chainCandidateLogs))
 	}
-	if len(ports.chainSelectionReasons) != 1 || ports.chainSelectionReasons[0] != "candidate_clearly_better" {
+	if len(ports.chainSelectionReasons) != 1 || ports.chainSelectionReasons[0] != SwitchReasonCandidateClearlyBetter {
 		t.Fatalf("chain selection logs = %v, want candidate_clearly_better", ports.chainSelectionReasons)
 	}
 }

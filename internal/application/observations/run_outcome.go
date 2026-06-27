@@ -1,6 +1,10 @@
 package observations
 
-import "strings"
+import (
+	"strings"
+
+	appmaintenance "proxygateway/internal/application/maintenance"
+)
 
 type RunResult struct {
 	NodeID string
@@ -23,8 +27,8 @@ type RunOutcome struct {
 
 func BuildNoTargetOutcome() RunOutcome {
 	return RunOutcome{
-		Result:         "skipped",
-		ReasonCode:     "no_targets",
+		Result:         appmaintenance.ResultSkipped,
+		ReasonCode:     appmaintenance.ReasonNoTargets,
 		FailureReasons: map[string]int{},
 		SampleFailures: []map[string]any{},
 	}
@@ -32,8 +36,8 @@ func BuildNoTargetOutcome() RunOutcome {
 
 func BuildCompletedOutcome(triggerSource string, results []RunResult) RunOutcome {
 	outcome := RunOutcome{
-		Result:         "success",
-		ReasonCode:     "completed",
+		Result:         appmaintenance.ResultSuccess,
+		ReasonCode:     appmaintenance.ReasonCompleted,
 		FinishedCount:  len(results),
 		FailureReasons: map[string]int{},
 		SampleFailures: []map[string]any{},
@@ -59,11 +63,11 @@ func BuildCompletedOutcome(triggerSource string, results []RunResult) RunOutcome
 	}
 	outcome.FailureCount = len(results) - outcome.SuccessCount
 	if outcome.FailureCount > 0 && outcome.SuccessCount > 0 {
-		outcome.ReasonCode = "partial_failure"
+		outcome.ReasonCode = appmaintenance.ReasonPartialFailure
 	} else if outcome.FailureCount > 0 {
-		outcome.Result = "failure"
-		outcome.ReasonCode = "all_failed"
+		outcome.Result = appmaintenance.ResultFailure
+		outcome.ReasonCode = appmaintenance.ReasonAllFailed
 	}
-	outcome.EnqueueWaitingProfiles = triggerSource == "subscription_refresh"
+	outcome.EnqueueWaitingProfiles = triggerSource == appmaintenance.TriggerSubscriptionRefresh
 	return outcome
 }

@@ -17,8 +17,8 @@ func TestMaintenanceRunRepositoryPersistsLifecycleAndQueries(t *testing.T) {
 
 	insertMaintenanceRunForTest(t, repo, maintenanceapp.Run{
 		ID:            "run_profile_old",
-		RunType:       "profile_evaluation",
-		TriggerSource: "manual",
+		RunType:       maintenanceapp.RunTypeProfileEvaluation,
+		TriggerSource: maintenanceapp.TriggerManual,
 		TargetID:      "profile_1",
 		TargetLabel:   "Primary profile",
 		State:         maintenanceapp.StateQueued,
@@ -29,8 +29,8 @@ func TestMaintenanceRunRepositoryPersistsLifecycleAndQueries(t *testing.T) {
 	})
 	insertMaintenanceRunForTest(t, repo, maintenanceapp.Run{
 		ID:            "run_profile_new",
-		RunType:       "profile_evaluation",
-		TriggerSource: "scheduled",
+		RunType:       maintenanceapp.RunTypeProfileEvaluation,
+		TriggerSource: maintenanceapp.TriggerScheduled,
 		TargetID:      "profile_1",
 		TargetLabel:   "Primary profile",
 		State:         maintenanceapp.StateQueued,
@@ -41,8 +41,8 @@ func TestMaintenanceRunRepositoryPersistsLifecycleAndQueries(t *testing.T) {
 	})
 	insertMaintenanceRunForTest(t, repo, maintenanceapp.Run{
 		ID:            "run_subscription",
-		RunType:       "subscription_refresh",
-		TriggerSource: "manual",
+		RunType:       maintenanceapp.RunTypeSubscriptionRefresh,
+		TriggerSource: maintenanceapp.TriggerManual,
 		TargetID:      "sub_1",
 		TargetLabel:   "Subscription",
 		State:         maintenanceapp.StateQueued,
@@ -60,7 +60,7 @@ func TestMaintenanceRunRepositoryPersistsLifecycleAndQueries(t *testing.T) {
 		t.Fatalf("loaded run = %#v", loaded)
 	}
 
-	claimed, ok, err := repo.ClaimNext(ctx, "profile_evaluation", 3000)
+	claimed, ok, err := repo.ClaimNext(ctx, maintenanceapp.RunTypeProfileEvaluation, 3000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestMaintenanceRunRepositoryPersistsLifecycleAndQueries(t *testing.T) {
 		t.Fatalf("finished detail = %#v", finished.Detail)
 	}
 
-	listed, err := repo.List(ctx, maintenanceapp.ListFilter{RunType: "profile_evaluation", Page: 1, PageSize: 10})
+	listed, err := repo.List(ctx, maintenanceapp.ListFilter{RunType: maintenanceapp.RunTypeProfileEvaluation, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestMaintenanceRunRepositoryPersistsLifecycleAndQueries(t *testing.T) {
 		t.Fatalf("profile events = %#v", events)
 	}
 
-	unfinished, err := repo.ListUnfinished(ctx, "profile_evaluation")
+	unfinished, err := repo.ListUnfinished(ctx, maintenanceapp.RunTypeProfileEvaluation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestMaintenanceRunRepositoryPersistsLifecycleAndQueries(t *testing.T) {
 		t.Fatalf("active run IDs = %#v", got)
 	}
 
-	claimedSubscription, ok, err := repo.ClaimNext(ctx, "subscription_refresh", 3300)
+	claimedSubscription, ok, err := repo.ClaimNext(ctx, maintenanceapp.RunTypeSubscriptionRefresh, 3300)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestMaintenanceRunRepositoryPersistsLifecycleAndQueries(t *testing.T) {
 		t.Fatalf("running profile run = %#v", runningProfile)
 	}
 
-	_, ok, err = repo.ClaimNext(ctx, "profile_evaluation", 3500)
+	_, ok, err = repo.ClaimNext(ctx, maintenanceapp.RunTypeProfileEvaluation, 3500)
 	if err != nil {
 		t.Fatal(err)
 	}

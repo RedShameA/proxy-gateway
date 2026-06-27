@@ -1,10 +1,14 @@
 package observations
 
-import "testing"
+import (
+	"testing"
+
+	appmaintenance "proxygateway/internal/application/maintenance"
+)
 
 func TestBuildNoTargetOutcome(t *testing.T) {
 	outcome := BuildNoTargetOutcome()
-	if outcome.Result != "skipped" || outcome.ReasonCode != "no_targets" || outcome.FinishedCount != 0 {
+	if outcome.Result != appmaintenance.ResultSkipped || outcome.ReasonCode != appmaintenance.ReasonNoTargets || outcome.FinishedCount != 0 {
 		t.Fatalf("outcome = %#v", outcome)
 	}
 	if outcome.SuccessCount != 0 || outcome.FailureCount != 0 {
@@ -16,11 +20,11 @@ func TestBuildNoTargetOutcome(t *testing.T) {
 }
 
 func TestBuildCompletedOutcomeReportsSuccess(t *testing.T) {
-	outcome := BuildCompletedOutcome("manual", []RunResult{
+	outcome := BuildCompletedOutcome(appmaintenance.TriggerManual, []RunResult{
 		{NodeID: "node-1", Name: "Node 1", OK: true},
 		{NodeID: "node-2", Name: "Node 2", OK: true},
 	})
-	if outcome.Result != "success" || outcome.ReasonCode != "completed" || outcome.FinishedCount != 2 {
+	if outcome.Result != appmaintenance.ResultSuccess || outcome.ReasonCode != appmaintenance.ReasonCompleted || outcome.FinishedCount != 2 {
 		t.Fatalf("outcome = %#v", outcome)
 	}
 	if outcome.SuccessCount != 2 || outcome.FailureCount != 0 || outcome.EnqueueWaitingProfiles {
@@ -29,11 +33,11 @@ func TestBuildCompletedOutcomeReportsSuccess(t *testing.T) {
 }
 
 func TestBuildCompletedOutcomeReportsPartialFailure(t *testing.T) {
-	outcome := BuildCompletedOutcome("manual", []RunResult{
+	outcome := BuildCompletedOutcome(appmaintenance.TriggerManual, []RunResult{
 		{NodeID: "node-1", Name: "Node 1", OK: true},
 		{NodeID: "node-2", Name: "Node 2", Error: "dial failed"},
 	})
-	if outcome.Result != "success" || outcome.ReasonCode != "partial_failure" || outcome.FinishedCount != 2 {
+	if outcome.Result != appmaintenance.ResultSuccess || outcome.ReasonCode != appmaintenance.ReasonPartialFailure || outcome.FinishedCount != 2 {
 		t.Fatalf("outcome = %#v", outcome)
 	}
 	if outcome.SuccessCount != 1 || outcome.FailureCount != 1 || outcome.LastError != "dial failed" {
@@ -48,11 +52,11 @@ func TestBuildCompletedOutcomeReportsPartialFailure(t *testing.T) {
 }
 
 func TestBuildCompletedOutcomeReportsAllFailedAndRefreshFollowUp(t *testing.T) {
-	outcome := BuildCompletedOutcome("subscription_refresh", []RunResult{
+	outcome := BuildCompletedOutcome(appmaintenance.TriggerSubscriptionRefresh, []RunResult{
 		{NodeID: "node-1", Name: "Node 1", Error: "timeout"},
 		{NodeID: "node-2", Name: "Node 2", Error: ""},
 	})
-	if outcome.Result != "failure" || outcome.ReasonCode != "all_failed" || outcome.FinishedCount != 2 {
+	if outcome.Result != appmaintenance.ResultFailure || outcome.ReasonCode != appmaintenance.ReasonAllFailed || outcome.FinishedCount != 2 {
 		t.Fatalf("outcome = %#v", outcome)
 	}
 	if outcome.SuccessCount != 0 || outcome.FailureCount != 2 || !outcome.EnqueueWaitingProfiles {

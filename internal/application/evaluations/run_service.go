@@ -152,9 +152,9 @@ func (s RunService) EvaluateFastest(ctx context.Context, target Target, settings
 	if !s.selectedProfileNodeStillValid(ctx, target, selection.SelectedNodeID) {
 		finishedAt = s.nowMillis()
 		details["selected_node_id"] = selection.SelectedNodeID
-		details["switch_reason"] = "selected_node_removed"
-		details["reason"] = "selected_node_removed"
-		s.logFastestSelection(ctx, target, len(nodes), summary, currentNodeID, selection.SelectedNodeID, "selected_node_removed")
+		details["switch_reason"] = SwitchReasonSelectedNodeRemoved
+		details["reason"] = SwitchReasonSelectedNodeRemoved
+		s.logFastestSelection(ctx, target, len(nodes), summary, currentNodeID, selection.SelectedNodeID, SwitchReasonSelectedNodeRemoved)
 		detailsJSON, _ := json.Marshal(details)
 		s.updateState(ctx, target, FastestSelectedNodeRemovedUpdate(string(detailsJSON), finishedAt))
 		return false
@@ -176,7 +176,7 @@ func (s RunService) EvaluateFastestFront(ctx context.Context, target Target, set
 		return false
 	}
 	if len(target.ExitNodeIDs) != 1 {
-		outcome := PlanChainInvalidConfig("chain_link requires exactly one exit_node_id", "invalid_chain_config")
+		outcome := PlanChainInvalidConfig("chain_link requires exactly one exit_node_id", SwitchReasonInvalidChainConfig)
 		s.updateState(ctx, target, outcome.StateUpdate(s.nowMillis()))
 		return false
 	}
@@ -335,9 +335,9 @@ func (s RunService) finishChainSelection(ctx context.Context, target Target, tes
 		finishedAt = s.nowMillis()
 		details["selected_node_id"] = selection.SelectedFrontNodeID
 		details["selected_exit_node_id"] = selection.SelectedExitNodeID
-		details["switch_reason"] = "selected_node_removed"
-		details["reason"] = "selected_node_removed"
-		s.logChainSelection(ctx, target, candidateCount, summary, currentNodeID, currentExitNodeID, selection.SelectedFrontNodeID, selection.SelectedExitNodeID, "selected_node_removed")
+		details["switch_reason"] = SwitchReasonSelectedNodeRemoved
+		details["reason"] = SwitchReasonSelectedNodeRemoved
+		s.logChainSelection(ctx, target, candidateCount, summary, currentNodeID, currentExitNodeID, selection.SelectedFrontNodeID, selection.SelectedExitNodeID, SwitchReasonSelectedNodeRemoved)
 		detailsJSON, _ := json.Marshal(details)
 		s.updateState(ctx, target, ChainSelectedPathRemovedUpdate(string(detailsJSON), finishedAt))
 		return false

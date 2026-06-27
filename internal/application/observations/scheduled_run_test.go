@@ -1,6 +1,10 @@
 package observations
 
-import "testing"
+import (
+	"testing"
+
+	appmaintenance "proxygateway/internal/application/maintenance"
+)
 
 func TestPlanScheduledAggregateRunSkipsWhenAggregateRunAlreadyUnfinished(t *testing.T) {
 	plan := PlanScheduledAggregateRun([]NodeTarget{
@@ -10,13 +14,13 @@ func TestPlanScheduledAggregateRunSkipsWhenAggregateRunAlreadyUnfinished(t *test
 	if !plan.CreateRun || !plan.FinishImmediately {
 		t.Fatalf("plan = %#v, want created immediate-finish run", plan)
 	}
-	if plan.Scope != "all_nodes" || plan.TriggerSource != "scheduled" {
+	if plan.Scope != appmaintenance.NodeObservationScopeAllNodes || plan.TriggerSource != appmaintenance.TriggerScheduled {
 		t.Fatalf("plan identity = %#v", plan)
 	}
 	if plan.ProbeURL != "https://probe.example" || len(plan.Targets) != 1 {
 		t.Fatalf("plan targets = %#v", plan)
 	}
-	if plan.Result != "skipped" || plan.ReasonCode != "previous_run_still_running" || plan.NotifyRunner {
+	if plan.Result != appmaintenance.ResultSkipped || plan.ReasonCode != appmaintenance.ReasonPreviousRunStillRunning || plan.NotifyRunner {
 		t.Fatalf("plan outcome = %#v", plan)
 	}
 }
@@ -33,7 +37,7 @@ func TestPlanScheduledAggregateRunQueuesWhenTargetsExistAndNoConflict(t *testing
 	if plan.Result != "" || plan.ReasonCode != "" || !plan.NotifyRunner {
 		t.Fatalf("plan outcome = %#v", plan)
 	}
-	if len(plan.Targets) != 2 || plan.Scope != "all_nodes" || plan.TriggerSource != "scheduled" {
+	if len(plan.Targets) != 2 || plan.Scope != appmaintenance.NodeObservationScopeAllNodes || plan.TriggerSource != appmaintenance.TriggerScheduled {
 		t.Fatalf("plan identity = %#v", plan)
 	}
 }

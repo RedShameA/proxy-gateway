@@ -51,9 +51,9 @@ func (s ManualNodeImportService) Import(ctx context.Context, command ManualNodeI
 	err = s.Runner.WithManualNodeImportTx(ctx, func(tx ManualNodeImportTx) error {
 		for _, parsedNode := range parsed {
 			input, err := appnodes.BuildUpsertInput(outboundNodeFromParsed(parsedNode), appnodes.SourceInput{
-				ID:   "manual",
+				ID:   appnodes.SourceTypeManual,
 				Name: "Manual",
-				Type: "manual",
+				Type: appnodes.SourceTypeManual,
 			}, command.NowMillis)
 			if err != nil {
 				return err

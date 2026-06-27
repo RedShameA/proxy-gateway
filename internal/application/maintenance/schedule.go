@@ -1,5 +1,7 @@
 package maintenance
 
+import domainprofile "proxygateway/internal/domain/profile"
+
 func DueProfileEvaluationTargets(targets []ProfileEvaluationScheduleTarget, nowMillis int64, profileIntervalSeconds, chainIntervalSeconds int) []ProfileEvaluationScheduleTarget {
 	due := make([]ProfileEvaluationScheduleTarget, 0, len(targets))
 	for _, target := range targets {
@@ -7,7 +9,7 @@ func DueProfileEvaluationTargets(targets []ProfileEvaluationScheduleTarget, nowM
 			continue
 		}
 		interval := profileIntervalSeconds
-		if target.ProfileType == "chain" {
+		if target.ProfileType == domainprofile.TypeChain {
 			interval = chainIntervalSeconds
 		}
 		if target.AutoEvaluationIntervalSeconds > 0 {

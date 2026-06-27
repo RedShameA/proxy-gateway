@@ -111,9 +111,9 @@ func (s Service) UpdateManual(repo ManualUpdateRepository, input ManualUpdateInp
 		Password:     input.Password,
 		RawJSON:      input.RawJSON,
 		OutboundJSON: input.OutboundJSON,
-		SourceID:     "manual",
+		SourceID:     SourceTypeManual,
 		SourceName:   "Manual",
-		SourceType:   "manual",
+		SourceType:   SourceTypeManual,
 		NowMillis:    input.NowMillis,
 	})
 	if err != nil {

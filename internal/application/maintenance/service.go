@@ -6,19 +6,6 @@ import (
 	"strings"
 )
 
-const (
-	StateQueued   = "queued"
-	StateRunning  = "running"
-	StateFinished = "finished"
-
-	ResultSuccess = "success"
-
-	ReasonCompleted = "completed"
-
-	NodeObservationScopeAllNodes = "all_nodes"
-	NodeObservationScopeDueNodes = "due_nodes"
-)
-
 var ErrRunNotFound = errors.New("maintenance run not found")
 
 type Run struct {

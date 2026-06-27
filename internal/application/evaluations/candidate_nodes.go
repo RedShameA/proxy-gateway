@@ -56,7 +56,7 @@ func loadCandidateNode(ctx context.Context, repo CandidateRepository, node appno
 		Name: node.Name,
 	}
 	filter = domainprofile.NormalizeCandidateFilter(filter)
-	if filter.NodeSourceMode == "all" && !filter.ManualOnly && len(filter.SourceIDs) == 0 {
+	if filter.NodeSourceMode == domainprofile.NodeSourceModeAll && !filter.ManualOnly && len(filter.SourceIDs) == 0 {
 		return candidate
 	}
 	refs, err := repo.ListCandidateSourceRefs(ctx, node.ID)

@@ -12,17 +12,17 @@ var (
 
 func NormalizeChainEvaluationMode(mode string) string {
 	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode == "chain_link" {
-		return "chain_link"
+	if mode == ChainEvaluationModeChainLink {
+		return ChainEvaluationModeChainLink
 	}
-	return "end_to_end"
+	return ChainEvaluationModeEndToEnd
 }
 
 func ValidateChainExitNodes(exitNodeIDs []string, chainEvaluationMode string) error {
 	if len(exitNodeIDs) == 0 {
 		return ErrExitNodesRequired
 	}
-	if NormalizeChainEvaluationMode(chainEvaluationMode) == "chain_link" && len(exitNodeIDs) != 1 {
+	if NormalizeChainEvaluationMode(chainEvaluationMode) == ChainEvaluationModeChainLink && len(exitNodeIDs) != 1 {
 		return ErrChainLinkSingleExitRequired
 	}
 	return nil

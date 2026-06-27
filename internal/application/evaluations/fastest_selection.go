@@ -23,16 +23,16 @@ type FastestSelection struct {
 
 func SelectFastestPath(input FastestSelectionInput) FastestSelection {
 	if input.CurrentNodeID == "" || input.BestNodeID == input.CurrentNodeID || input.ForceSwitch {
-		reason := "initial_selection"
+		reason := SwitchReasonInitialSelection
 		if input.ForceSwitch && input.CurrentNodeID != "" && input.BestNodeID != input.CurrentNodeID {
-			reason = "force_switch"
+			reason = SwitchReasonForceSwitch
 		} else if input.BestNodeID == input.CurrentNodeID {
-			reason = "current_path_still_best"
+			reason = SwitchReasonCurrentPathStillBest
 		}
 		return FastestSelection{
 			SelectedNodeID:     input.BestNodeID,
 			SelectedDurationMS: input.BestDurationMS,
-			State:              "ready",
+			State:              ProfileStateReady,
 			SwitchReason:       reason,
 		}
 	}
@@ -40,23 +40,23 @@ func SelectFastestPath(input FastestSelectionInput) FastestSelection {
 		return FastestSelection{
 			SelectedNodeID:     input.BestNodeID,
 			SelectedDurationMS: input.BestDurationMS,
-			State:              "ready",
-			SwitchReason:       "current_path_failed_switch",
+			State:              ProfileStateReady,
+			SwitchReason:       SwitchReasonCurrentPathFailedSwitch,
 		}
 	}
 	if clearlyBetter(input.BestDurationMS, input.CurrentDurationMS, input.RelativeImprovementThreshold, input.AbsoluteLatencyImprovementMS) {
 		return FastestSelection{
 			SelectedNodeID:     input.BestNodeID,
 			SelectedDurationMS: input.BestDurationMS,
-			State:              "ready",
-			SwitchReason:       "candidate_clearly_better",
+			State:              ProfileStateReady,
+			SwitchReason:       SwitchReasonCandidateClearlyBetter,
 		}
 	}
 	return FastestSelection{
 		SelectedNodeID:     input.CurrentNodeID,
 		SelectedDurationMS: input.CurrentDurationMS,
-		State:              "ready",
-		SwitchReason:       "candidate_not_clearly_better",
+		State:              ProfileStateReady,
+		SwitchReason:       SwitchReasonCandidateNotClearlyBetter,
 	}
 }
 

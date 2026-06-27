@@ -257,7 +257,7 @@ export function AccessProfileDetailPage({ client }: { client: ApiClient }) {
             { key: '路径', value: pathSummaryText(profile.best_observed_path) },
             { key: '相对提升', value: profile.best_observed_relative_improvement ? `${(profile.best_observed_relative_improvement * 100).toFixed(1)}%` : '-' },
             { key: '绝对提升', value: profile.best_observed_absolute_improvement_ms ? `${profile.best_observed_absolute_improvement_ms}ms` : '-' },
-            { key: '未切换原因', value: profile.no_switch_reason || '-' },
+            { key: '未切换原因', value: switchReasonLabel(profile.no_switch_reason) || '-' },
           ]} />
           <Button type="primary" style={{ marginTop: 12 }} onClick={handleSwitchToBest}>
             切换到当前观测最快路径

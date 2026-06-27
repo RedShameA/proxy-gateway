@@ -72,7 +72,7 @@ func BuildNodePathSummary(node appnodes.Record, observation appnodes.Observation
 }
 
 func BuildCurrentPath(record ConfigRecord, deps CurrentPathDeps) any {
-	if record.Type == "chain" {
+	if record.Type == domainprofile.TypeChain {
 		if record.CurrentNodeID == "" || record.CurrentExitNodeID == "" {
 			return nil
 		}
@@ -89,7 +89,7 @@ func BuildCurrentPath(record ConfigRecord, deps CurrentPathDeps) any {
 	if record.CurrentNodeID == "" {
 		return nil
 	}
-	if record.Type == "fastest" && deps.ProfileNodeMatchesCandidateFilter != nil && !deps.ProfileNodeMatchesCandidateFilter(record.ID, record.CurrentNodeID, record.CandidateFilter()) {
+	if record.Type == domainprofile.TypeFastest && deps.ProfileNodeMatchesCandidateFilter != nil && !deps.ProfileNodeMatchesCandidateFilter(record.ID, record.CurrentNodeID, record.CandidateFilter()) {
 		return nil
 	}
 	node, ok := nodePathSummary(record.CurrentNodeID, deps.NodePathSummary)
@@ -104,7 +104,7 @@ func BuildSinglePathSummary(node NodePathSummary, latencyMS int64, evaluatedAt i
 		PathType:    "single",
 		Node:        node,
 		LatencyMS:   nullablePositiveInt64(latencyMS),
-		LatencyKind: "end_to_end",
+		LatencyKind: domainprofile.ChainEvaluationModeEndToEnd,
 		EvaluatedAt: nullablePositiveInt64(evaluatedAt),
 	}
 }
@@ -112,7 +112,7 @@ func BuildSinglePathSummary(node NodePathSummary, latencyMS int64, evaluatedAt i
 func BuildChainPathSummary(frontNode, exitNode NodePathSummary, chainEvaluationMode string, latencyMS int64, evaluatedAt int64) ChainPathSummary {
 	mode := domainprofile.NormalizeChainEvaluationMode(chainEvaluationMode)
 	return ChainPathSummary{
-		PathType:            "chain",
+		PathType:            domainprofile.TypeChain,
 		FrontNode:           frontNode,
 		ExitNode:            exitNode,
 		FinalEgressCountry:  exitNode.EgressCountry,

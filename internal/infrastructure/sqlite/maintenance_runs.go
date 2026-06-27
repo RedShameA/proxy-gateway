@@ -5,13 +5,15 @@ import (
 	"database/sql"
 	"strings"
 
+	appevaluations "proxygateway/internal/application/evaluations"
 	maintenanceapp "proxygateway/internal/application/maintenance"
+	domainprofile "proxygateway/internal/domain/profile"
 )
 
 const (
-	maintenanceRunStateQueued   = "queued"
-	maintenanceRunStateRunning  = "running"
-	maintenanceRunStateFinished = "finished"
+	maintenanceRunStateQueued   = maintenanceapp.StateQueued
+	maintenanceRunStateRunning  = maintenanceapp.StateRunning
+	maintenanceRunStateFinished = maintenanceapp.StateFinished
 )
 
 type MaintenanceRunRepository struct {
@@ -386,11 +388,13 @@ func (r MaintenanceRunRepository) RepairDanglingProfilePaths(ctx context.Context
 				`UPDATE access_profiles
 				    SET current_node_id = '',
 				        current_exit_node_id = '',
-				        state = 'invalid_config',
+				        state = ?,
 				        last_error = 'referenced node no longer exists',
-				        switch_reason = 'missing_fixed_node',
+				        switch_reason = ?,
 				        last_evaluated_at = ?
 				  WHERE id = ?`,
+				appevaluations.ProfileStateInvalidConfig,
+				appevaluations.SwitchReasonMissingFixedNode,
 				nowMillis,
 				profile.id,
 			); err != nil {
@@ -399,7 +403,7 @@ func (r MaintenanceRunRepository) RepairDanglingProfilePaths(ctx context.Context
 			result.InvalidCount++
 			continue
 		}
-		if profile.profileType != "fastest" && profile.profileType != "chain" {
+		if profile.profileType != domainprofile.TypeFastest && profile.profileType != domainprofile.TypeChain {
 			continue
 		}
 		if profile.autoEval {
@@ -408,11 +412,13 @@ func (r MaintenanceRunRepository) RepairDanglingProfilePaths(ctx context.Context
 				`UPDATE access_profiles
 				    SET current_node_id = '',
 				        current_exit_node_id = '',
-				        state = 'waiting_observation',
+				        state = ?,
 				        last_error = '',
-				        switch_reason = 'current_node_removed',
+				        switch_reason = ?,
 				        last_evaluation_started_at = ?
 				  WHERE id = ?`,
+				appevaluations.ProfileStateWaitingObservation,
+				appevaluations.SwitchReasonCurrentNodeRemoved,
 				nowMillis,
 				profile.id,
 			); err != nil {
@@ -425,10 +431,12 @@ func (r MaintenanceRunRepository) RepairDanglingProfilePaths(ctx context.Context
 				`UPDATE access_profiles
 				    SET current_node_id = '',
 				        current_exit_node_id = '',
-				        state = 'pending',
+				        state = ?,
 				        last_error = 'current node no longer exists',
-				        switch_reason = 'current_node_removed'
+				        switch_reason = ?
 				  WHERE id = ?`,
+				appevaluations.ProfileStatePending,
+				appevaluations.SwitchReasonCurrentNodeRemoved,
 				profile.id,
 			); err != nil {
 				return result, err

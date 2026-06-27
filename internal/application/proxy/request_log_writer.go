@@ -197,13 +197,13 @@ func (event requestLogEvent) logFields() requestLogEventFields {
 func requestLogEventKindName(kind requestLogEventKind) string {
 	switch kind {
 	case requestLogEventStart:
-		return "start"
+		return RequestLogEventKindStart
 	case requestLogEventFinish:
-		return "finish"
+		return RequestLogEventKindFinish
 	case requestLogEventFailure:
-		return "failure"
+		return RequestLogEventKindFailure
 	default:
-		return "unknown"
+		return RequestLogEventKindUnknown
 	}
 }
 

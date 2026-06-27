@@ -17,7 +17,7 @@ type ContentSource struct {
 }
 
 func ContentForImport(ctx context.Context, source ContentSource, fetch ContentFetcher) (string, error) {
-	if source.SourceType != "remote" {
+	if source.SourceType != SourceTypeRemote {
 		return source.Content, nil
 	}
 	if strings.TrimSpace(source.URL) == "" {

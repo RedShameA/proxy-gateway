@@ -193,13 +193,13 @@ func nodeListWhere(filter appnodes.ListFilter) (string, []any) {
 		args = append(args, sourceType)
 	}
 	switch strings.ToLower(strings.TrimSpace(filter.State)) {
-	case "disabled":
+	case appnodes.StateDisabled:
 		clauses = append(clauses, `n.enabled != 1`)
-	case "pending_observation":
+	case appnodes.StatePendingObservation:
 		clauses = append(clauses, `n.enabled = 1 AND o.node_id IS NULL`)
-	case "usable":
+	case appnodes.StateUsable:
 		clauses = append(clauses, `n.enabled = 1 AND COALESCE(o.usable, 0) = 1`)
-	case "unusable":
+	case appnodes.StateUnusable:
 		clauses = append(clauses, `n.enabled = 1 AND o.node_id IS NOT NULL AND COALESCE(o.usable, 0) != 1`)
 	}
 	if filter.Usable != nil {

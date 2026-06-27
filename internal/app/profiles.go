@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	apperrors "proxygateway/internal/application/apperrors"
+	appmaintenance "proxygateway/internal/application/maintenance"
 	applicationprofiles "proxygateway/internal/application/profiles"
 	appproxy "proxygateway/internal/application/proxy"
 	appreadmodel "proxygateway/internal/application/readmodel"
@@ -40,7 +41,7 @@ func (g *Gateway) createAccessProfile(req accessProfilePatchRequest) (applicatio
 	}
 	cfg := result.Config
 	if result.EnqueueEvaluation {
-		_, _ = g.enqueueProfileEvaluationRun(cfg.ID, cfg.Name, "access_profile_change", 1, true)
+		_, _ = g.enqueueProfileEvaluationRun(cfg.ID, cfg.Name, appmaintenance.TriggerAccessProfileChange, 1, true)
 	}
 	if result.EnqueueUnknownCountryObservation {
 		g.enqueueUnknownCountryObservations(cfg.CandidateFilter())
@@ -162,7 +163,7 @@ func (g *Gateway) patchAccessProfile(profileID string, req accessProfilePatchReq
 	cfg := result.Config
 	g.invalidateRuntimeFingerprints(result.DeletedFingerprints)
 	if result.EnqueueEvaluation {
-		_, _ = g.enqueueProfileEvaluationRun(profileID, cfg.Name, "access_profile_change", cfg.ConfigVersion, true)
+		_, _ = g.enqueueProfileEvaluationRun(profileID, cfg.Name, appmaintenance.TriggerAccessProfileChange, cfg.ConfigVersion, true)
 	}
 	if result.EnqueueUnknownCountryObservation {
 		g.enqueueUnknownCountryObservations(cfg.CandidateFilter())
@@ -408,7 +409,7 @@ func (g *Gateway) runAccessProfileAction(profileID string, action string) (map[s
 	if err != nil {
 		switch {
 		case errors.Is(err, applicationprofiles.ErrProfileTypeNotEvaluable):
-			return nil, newProfileOperationError(profileErrorBadRequest, "profile_type_not_evaluable", err)
+			return nil, newProfileOperationError(profileErrorBadRequest, appmaintenance.ReasonProfileTypeNotEvaluable, err)
 		case errors.Is(err, applicationprofiles.ErrNoCurrentPathToSwitch):
 			return nil, newProfileOperationError(profileErrorConflict, "no current path to switch from", err)
 		default:
@@ -416,13 +417,13 @@ func (g *Gateway) runAccessProfileAction(profileID string, action string) (map[s
 		}
 	}
 	if !plan.CreateSwitchRun {
-		runID, err := g.enqueueProfileEvaluationRun(profileID, cfg.Name, "manual", cfg.ConfigVersion, true)
+		runID, err := g.enqueueProfileEvaluationRun(profileID, cfg.Name, appmaintenance.TriggerManual, cfg.ConfigVersion, true)
 		if err != nil {
 			return nil, newProfileOperationError(profileErrorInternal, "enqueue evaluation", err)
 		}
 		return map[string]any{"run_id": runID, "state": plan.ResponseState}, nil
 	}
-	run, err := g.createMaintenanceRun(maintenanceRunTypeProfileSwitch, "manual", profileID, cfg.Name, 1, plan.SwitchRunDetail)
+	run, err := g.createMaintenanceRun(maintenanceRunTypeProfileSwitch, appmaintenance.TriggerManual, profileID, cfg.Name, 1, plan.SwitchRunDetail)
 	if err != nil {
 		return nil, newProfileOperationError(profileErrorInternal, "create profile switch run", err)
 	}
@@ -431,6 +432,6 @@ func (g *Gateway) runAccessProfileAction(profileID string, action string) (map[s
 	if err := g.finishMaintenanceRun(run.ID, maintenanceRunResultSuccess, plan.SwitchReason, 1, detail, ""); err != nil {
 		return nil, newProfileOperationError(profileErrorInternal, "finish profile switch run", err)
 	}
-	_, _ = g.enqueueProfileEvaluationRun(profileID, cfg.Name, "manual", cfg.ConfigVersion, true)
+	_, _ = g.enqueueProfileEvaluationRun(profileID, cfg.Name, appmaintenance.TriggerManual, cfg.ConfigVersion, true)
 	return map[string]any{"run_id": run.ID, "state": plan.ResponseState}, nil
 }

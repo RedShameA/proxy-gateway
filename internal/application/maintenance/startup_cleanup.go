@@ -2,8 +2,6 @@ package maintenance
 
 import "context"
 
-const RunTypeStartupCleanup = "startup_cleanup"
-
 type StartupCleanupResult struct {
 	CancelledCount int
 	RepairedCount  int
@@ -24,7 +22,7 @@ func (s StartupCleanupService) Execute(ctx context.Context) (StartupCleanupResul
 		if err := s.Runs.Finish(ctx, FinishCommand{
 			ID:            run.ID,
 			Result:        ResultCancelled,
-			ReasonCode:    "expired_after_restart",
+			ReasonCode:    ReasonExpiredAfterRestart,
 			FinishedCount: run.FinishedCount,
 			Detail:        RunDetail(run),
 			LastError:     run.LastError,
@@ -43,7 +41,7 @@ func (s StartupCleanupService) Execute(ctx context.Context) (StartupCleanupResul
 	}
 	startup, err := s.Runs.Create(ctx, CreateCommand{
 		RunType:       RunTypeStartupCleanup,
-		TriggerSource: "startup",
+		TriggerSource: TriggerStartup,
 		TargetLabel:   "Startup cleanup",
 		TotalCount:    len(activeRuns),
 		Detail:        detail,

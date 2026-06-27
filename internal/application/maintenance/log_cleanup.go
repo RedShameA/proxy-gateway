@@ -42,7 +42,7 @@ func (s LogCleanupService) Execute(ctx context.Context, run Run, settings LogCle
 			return FinishCommand{
 				ID:            run.ID,
 				Result:        ResultFailure,
-				ReasonCode:    "request_log_cleanup_failed",
+				ReasonCode:    ReasonRequestLogCleanupFailed,
 				FinishedCount: 0,
 				Detail:        RunDetail(run),
 				LastError:     err.Error(),
@@ -57,7 +57,7 @@ func (s LogCleanupService) Execute(ctx context.Context, run Run, settings LogCle
 			return FinishCommand{
 				ID:            run.ID,
 				Result:        ResultFailure,
-				ReasonCode:    "maintenance_history_cleanup_failed",
+				ReasonCode:    ReasonMaintenanceHistoryCleanupFailed,
 				FinishedCount: 0,
 				Detail:        RunDetail(run),
 				LastError:     err.Error(),

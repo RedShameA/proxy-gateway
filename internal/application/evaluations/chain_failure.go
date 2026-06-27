@@ -10,7 +10,7 @@ type ChainFailureOutcome struct {
 
 func PlanChainInvalidConfig(lastError, switchReason string) ChainFailureOutcome {
 	return ChainFailureOutcome{
-		State:            "invalid_config",
+		State:            ProfileStateInvalidConfig,
 		LastError:        lastError,
 		SwitchReason:     switchReason,
 		ClearCurrentPath: true,
@@ -19,9 +19,9 @@ func PlanChainInvalidConfig(lastError, switchReason string) ChainFailureOutcome 
 
 func PlanChainCandidateFilterError(lastError string) ChainFailureOutcome {
 	return ChainFailureOutcome{
-		State:            "failed",
+		State:            ProfileStateFailed,
 		LastError:        lastError,
-		SwitchReason:     "candidate_filter_error",
+		SwitchReason:     SwitchReasonCandidateFilterError,
 		ClearCurrentPath: true,
 	}
 }
@@ -40,16 +40,16 @@ func PlanChainAllCandidatesFailed(currentPathExists bool, lastError, defaultLast
 	}
 	if currentPathExists {
 		return ChainFailureOutcome{
-			State:                        "degraded",
+			State:                        ProfileStateDegraded,
 			LastError:                    lastError,
-			SwitchReason:                 "current_path_reused_after_failure",
+			SwitchReason:                 SwitchReasonCurrentPathReusedAfterFailure,
 			IncrementCurrentPathCounters: true,
 		}
 	}
 	return ChainFailureOutcome{
-		State:            "failed",
+		State:            ProfileStateFailed,
 		LastError:        lastError,
-		SwitchReason:     "all_candidates_failed",
+		SwitchReason:     SwitchReasonAllCandidatesFailed,
 		ClearCurrentPath: true,
 	}
 }
@@ -57,28 +57,28 @@ func PlanChainAllCandidatesFailed(currentPathExists bool, lastError, defaultLast
 func PlanChainMissingExitNode(lastError string, retainCurrentPath bool) ChainFailureOutcome {
 	if retainCurrentPath {
 		return ChainFailureOutcome{
-			State:                        "degraded",
+			State:                        ProfileStateDegraded,
 			LastError:                    lastError,
-			SwitchReason:                 "current_path_reused_after_failure",
+			SwitchReason:                 SwitchReasonCurrentPathReusedAfterFailure,
 			IncrementCurrentPathCounters: true,
 		}
 	}
-	return PlanChainInvalidConfig(lastError, "missing_exit_node")
+	return PlanChainInvalidConfig(lastError, SwitchReasonMissingExitNode)
 }
 
 func planChainNoCandidate(lastError string, retainCurrentPath bool) ChainFailureOutcome {
 	if retainCurrentPath {
 		return ChainFailureOutcome{
-			State:                        "degraded",
+			State:                        ProfileStateDegraded,
 			LastError:                    lastError,
-			SwitchReason:                 "current_path_reused_after_failure",
+			SwitchReason:                 SwitchReasonCurrentPathReusedAfterFailure,
 			IncrementCurrentPathCounters: true,
 		}
 	}
 	return ChainFailureOutcome{
-		State:            "no_candidate",
+		State:            ProfileStateNoCandidate,
 		LastError:        lastError,
-		SwitchReason:     "no_candidate",
+		SwitchReason:     SwitchReasonNoCandidate,
 		ClearCurrentPath: true,
 	}
 }

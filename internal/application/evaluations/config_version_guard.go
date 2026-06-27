@@ -1,5 +1,7 @@
 package evaluations
 
+import appmaintenance "proxygateway/internal/application/maintenance"
+
 type ConfigVersionGuardInput struct {
 	RequestedConfigVersion int64
 	CurrentConfigVersion   int64
@@ -20,7 +22,7 @@ func CheckConfigVersion(input ConfigVersionGuardInput) ConfigVersionGuard {
 	}
 	return ConfigVersionGuard{
 		Superseded:           true,
-		ReasonCode:           "superseded_by_config_version",
+		ReasonCode:           appmaintenance.ReasonSupersededByConfigVersion,
 		CurrentConfigVersion: input.CurrentConfigVersion,
 	}
 }

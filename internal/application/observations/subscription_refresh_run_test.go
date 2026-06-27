@@ -1,6 +1,10 @@
 package observations
 
-import "testing"
+import (
+	"testing"
+
+	appmaintenance "proxygateway/internal/application/maintenance"
+)
 
 func TestPlanSubscriptionRefreshAggregateRunQueuesAllNodesAndNotifiesRunner(t *testing.T) {
 	plan := PlanSubscriptionRefreshAggregateRun([]NodeTarget{
@@ -11,7 +15,7 @@ func TestPlanSubscriptionRefreshAggregateRunQueuesAllNodesAndNotifiesRunner(t *t
 	if !plan.CreateRun || plan.FinishImmediately {
 		t.Fatalf("plan = %#v, want queued run", plan)
 	}
-	if plan.TriggerSource != "subscription_refresh" || plan.Scope != "all_nodes" {
+	if plan.TriggerSource != appmaintenance.TriggerSubscriptionRefresh || plan.Scope != appmaintenance.NodeObservationScopeAllNodes {
 		t.Fatalf("plan identity = %#v", plan)
 	}
 	if plan.ProbeURL != "https://probe.example" || !plan.NotifyRunner || len(plan.Targets) != 2 {

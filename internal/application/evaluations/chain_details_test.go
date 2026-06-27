@@ -15,7 +15,7 @@ func TestBuildChainDetailsIncludesFrontExitSelectionAndLatency(t *testing.T) {
 		CurrentDurationMS:   120,
 		SelectedFrontNodeID: "front-best",
 		SelectedExitNodeID:  "exit-best",
-		SwitchReason:        "candidate_clearly_better",
+		SwitchReason:        SwitchReasonCandidateClearlyBetter,
 	})
 
 	if details["candidate_count"] != 4 || details["failure_count"] != 1 || details["test_url"] != "https://example.test/probe" {

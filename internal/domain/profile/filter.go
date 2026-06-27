@@ -36,22 +36,22 @@ type CandidateStats struct {
 func NormalizeNodeSourceMode(mode string, sourceIDs []string, manualOnly bool) string {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	switch mode {
-	case "", "all":
+	case "", NodeSourceModeAll:
 		if manualOnly {
-			return "manual"
+			return NodeSourceModeManual
 		}
 		if len(sourceIDs) > 0 {
-			return "specific_subscriptions"
+			return NodeSourceModeSpecificSubscriptions
 		}
-		return "all"
-	case "manual":
-		return "manual"
-	case "subscription", "subscriptions":
-		return "subscriptions"
+		return NodeSourceModeAll
+	case NodeSourceModeManual:
+		return NodeSourceModeManual
+	case NodeSourceModeAliasSubscription, NodeSourceModeSubscriptions:
+		return NodeSourceModeSubscriptions
 	case "specific_subscription", "specific_subscriptions", "selected_source", "selected_sources":
-		return "specific_subscriptions"
+		return NodeSourceModeSpecificSubscriptions
 	default:
-		return "all"
+		return NodeSourceModeAll
 	}
 }
 
@@ -62,7 +62,7 @@ func MatchEgressCountry(filter CandidateFilter, country string) bool {
 	}
 	country = normalizeCandidateCountry(country)
 	matched := stringInList(country, filter.EgressCountries)
-	if filter.EgressCountryMode == "exclude" {
+	if filter.EgressCountryMode == EgressCountryModeExclude {
 		return !matched
 	}
 	return matched
@@ -76,7 +76,7 @@ func NormalizeCandidateFilter(filter CandidateFilter) CandidateFilter {
 	}
 	filter.EgressCountryMode = strings.ToLower(strings.TrimSpace(filter.EgressCountryMode))
 	if filter.EgressCountryMode == "" {
-		filter.EgressCountryMode = "include"
+		filter.EgressCountryMode = EgressCountryModeInclude
 	}
 	filter.NodeSourceMode = NormalizeNodeSourceMode(filter.NodeSourceMode, filter.SourceIDs, filter.ManualOnly)
 	filter.Protocols = normalizeProtocolList(filter.Protocols)
@@ -90,20 +90,20 @@ func MatchCandidateNode(filter CandidateFilter, node CandidateNode) bool {
 		return false
 	}
 	switch filter.NodeSourceMode {
-	case "manual":
-		if !stringInList("manual", node.SourceTypes) {
+	case NodeSourceModeManual:
+		if !stringInList(NodeSourceModeManual, node.SourceTypes) {
 			return false
 		}
-	case "subscriptions":
-		if !stringInList("subscription", node.SourceTypes) {
+	case NodeSourceModeSubscriptions:
+		if !stringInList(NodeSourceModeAliasSubscription, node.SourceTypes) {
 			return false
 		}
-	case "specific_subscriptions":
+	case NodeSourceModeSpecificSubscriptions:
 		if len(filter.SourceIDs) == 0 || !hasAnyString(node.SourceIDs, filter.SourceIDs) {
 			return false
 		}
 	}
-	if filter.ManualOnly && !stringInList("manual", node.SourceTypes) {
+	if filter.ManualOnly && !stringInList(NodeSourceModeManual, node.SourceTypes) {
 		return false
 	}
 	if filter.NodeSourceMode == "" && len(filter.SourceIDs) > 0 && !hasAnyString(node.SourceIDs, filter.SourceIDs) {
@@ -125,7 +125,7 @@ func BuildCandidateStats(profileType string, candidateNodeIDs []string, usableCo
 		UnknownEgressCountry: unknownEgressCountryCount,
 		PathCombinations:     len(candidateNodeIDs),
 	}
-	if profileType != "chain" {
+	if profileType != TypeChain {
 		return stats
 	}
 	frontCandidates := 0

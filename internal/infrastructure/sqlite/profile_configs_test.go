@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	appprofiles "proxygateway/internal/application/profiles"
+	domainprofile "proxygateway/internal/domain/profile"
 )
 
 func TestProfileConfigRepositoryContract(t *testing.T) {
@@ -77,7 +78,7 @@ func TestProfileConfigRepositoryContract(t *testing.T) {
 
 	mustExec(t, db, `UPDATE access_profiles SET last_error = 'old error', current_path_failed_evaluations = 2, current_path_missed_success_cycles = 3, switch_reason = 'old', last_evaluation_details_json = '{"old":true}', last_evaluated_at = 900, last_evaluation_started_at = 800 WHERE id = 'profile_1'`)
 	record.Name = "Fast Updated"
-	record.SwitchReason = "config_updated"
+	record.SwitchReason = domainprofile.SwitchReasonAccessProfileChange
 	record.LastEvaluationDetailsJSON = "{}"
 	record.ConfigVersion = 4
 	if err := repo.UpdateConfig(ctx, record, appprofiles.ConfigUpdateOptions{EvaluationChanged: true, ResetCurrentPath: true}); err != nil {
@@ -87,7 +88,7 @@ func TestProfileConfigRepositoryContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !found || loaded.Name != "Fast Updated" || loaded.ConfigVersion != 4 || loaded.LastError != "" || loaded.SwitchReason != "config_updated" || loaded.LastEvaluatedAt != 0 {
+	if !found || loaded.Name != "Fast Updated" || loaded.ConfigVersion != 4 || loaded.LastError != "" || loaded.SwitchReason != domainprofile.SwitchReasonAccessProfileChange || loaded.LastEvaluatedAt != 0 {
 		t.Fatalf("loaded after update = %#v found=%t", loaded, found)
 	}
 	var failures, missed int

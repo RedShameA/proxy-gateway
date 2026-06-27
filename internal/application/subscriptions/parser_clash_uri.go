@@ -21,12 +21,12 @@ func parseClashProxyMaps(proxies []map[string]any) ([]ParsedNode, SkippedEntrySu
 			EntryType: anyString(proxy["type"]),
 		}
 		if !subscriptionNodeTypeSupported(nodeType) {
-			skippedSummary.addDetail(skipReasonUnsupportedNodeType, detail)
+			skippedSummary.addDetail(SkippedReasonUnsupportedNodeType, detail)
 			continue
 		}
 		outbound, ok := clashProxySingBoxOutbound(proxy)
 		if !ok {
-			skippedSummary.addDetail(skipReasonMissingRequiredField, detail)
+			skippedSummary.addDetail(SkippedReasonMissingRequiredField, detail)
 			continue
 		}
 		node, reason, parsedDetail := parsedNodeFromSingBoxOutbound(outbound)
@@ -244,7 +244,7 @@ func parseURILines(text string) ([]ParsedNode, SkippedEntrySummarySet) {
 		}
 		outbounds, recognized := uriLineSingBoxOutbounds(line)
 		if !recognized {
-			skippedSummary.addDetail(skipReasonMalformedEntry, SkippedEntryDetail{Detail: truncateSkippedDetail(line)})
+			skippedSummary.addDetail(SkippedReasonMalformedEntry, SkippedEntryDetail{Detail: truncateSkippedDetail(line)})
 			continue
 		}
 		if len(outbounds) == 0 {
@@ -252,7 +252,7 @@ func parseURILines(text string) ([]ParsedNode, SkippedEntrySummarySet) {
 			if u, err := url.Parse(line); err == nil {
 				entryType = u.Scheme
 			}
-			skippedSummary.addDetail(skipReasonMissingRequiredField, SkippedEntryDetail{EntryType: entryType, Detail: truncateSkippedDetail(line)})
+			skippedSummary.addDetail(SkippedReasonMissingRequiredField, SkippedEntryDetail{EntryType: entryType, Detail: truncateSkippedDetail(line)})
 			continue
 		}
 		for _, outbound := range outbounds {

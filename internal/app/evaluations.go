@@ -73,10 +73,10 @@ func (g *Gateway) profileEvaluationTargetFromRecord(record appevaluations.Target
 
 func (g *Gateway) runOneProfileEvaluation(target profileEvaluationTarget, settings evaluationSettings) bool {
 	switch target.Type {
-	case "fastest":
+	case domainprofile.TypeFastest:
 		return g.evaluateFastestProfile(target, settings)
-	case "chain":
-		if normalizeChainEvaluationMode(target.ChainEvaluationMode) == "chain_link" {
+	case domainprofile.TypeChain:
+		if normalizeChainEvaluationMode(target.ChainEvaluationMode) == domainprofile.ChainEvaluationModeChainLink {
 			return g.evaluateFastestFrontProfile(target, settings)
 		}
 		return g.evaluateEndToEndChainProfile(target, settings)

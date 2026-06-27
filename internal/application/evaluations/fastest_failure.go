@@ -14,16 +14,16 @@ func PlanFastestNoCandidate(lastError string, retainCurrentPath bool) FastestFai
 	}
 	if retainCurrentPath {
 		return FastestFailureOutcome{
-			State:                        "degraded",
+			State:                        ProfileStateDegraded,
 			LastError:                    lastError,
-			SwitchReason:                 "current_path_reused_after_failure",
+			SwitchReason:                 SwitchReasonCurrentPathReusedAfterFailure,
 			IncrementCurrentPathCounters: true,
 		}
 	}
 	return FastestFailureOutcome{
-		State:            "no_candidate",
+		State:            ProfileStateNoCandidate,
 		LastError:        lastError,
-		SwitchReason:     "no_candidate",
+		SwitchReason:     SwitchReasonNoCandidate,
 		ClearCurrentNode: true,
 	}
 }
@@ -34,16 +34,16 @@ func PlanFastestAllCandidatesFailed(currentNodeID, lastError string) FastestFail
 	}
 	if currentNodeID != "" {
 		return FastestFailureOutcome{
-			State:                        "degraded",
+			State:                        ProfileStateDegraded,
 			LastError:                    lastError,
-			SwitchReason:                 "current_path_reused_after_failure",
+			SwitchReason:                 SwitchReasonCurrentPathReusedAfterFailure,
 			IncrementCurrentPathCounters: true,
 		}
 	}
 	return FastestFailureOutcome{
-		State:            "failed",
+		State:            ProfileStateFailed,
 		LastError:        lastError,
-		SwitchReason:     "all_candidates_failed",
+		SwitchReason:     SwitchReasonAllCandidatesFailed,
 		ClearCurrentNode: true,
 	}
 }

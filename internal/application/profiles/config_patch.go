@@ -9,12 +9,12 @@ import (
 func DefaultConfig(id string) ConfigRecord {
 	return ConfigRecord{
 		ID:                           id,
-		Type:                         "fastest",
-		EgressCountryMode:            "include",
-		NodeSourceMode:               "all",
+		Type:                         domainprofile.TypeFastest,
+		EgressCountryMode:            domainprofile.EgressCountryModeInclude,
+		NodeSourceMode:               domainprofile.NodeSourceModeAll,
 		RelativeImprovementThreshold: 0.2,
 		AbsoluteLatencyImprovementMS: 100,
-		State:                        "pending",
+		State:                        domainprofile.StatePending,
 		AutoEvaluationEnabled:        true,
 		ConfigVersion:                1,
 	}
@@ -109,16 +109,16 @@ func ApplyConfigPatch(cfg *ConfigRecord, req PatchRequest) {
 
 func applyEvaluationSchedulePatch(cfg *ConfigRecord, schedule PatchEvaluationSchedule) {
 	switch strings.ToLower(strings.TrimSpace(schedule.Mode)) {
-	case "disabled":
+	case ScheduleModeDisabled:
 		cfg.AutoEvaluationEnabled = false
-	case "custom":
+	case ScheduleModeCustom:
 		cfg.AutoEvaluationEnabled = true
 		if schedule.IntervalSeconds != nil {
 			cfg.AutoEvaluationInterval = *schedule.IntervalSeconds
 		}
-	case "inherit", "":
+	case ScheduleModeInherit, "":
 		cfg.AutoEvaluationEnabled = true
-		if schedule.Mode == "inherit" {
+		if schedule.Mode == ScheduleModeInherit {
 			cfg.AutoEvaluationInterval = 0
 		} else if schedule.IntervalSeconds != nil {
 			cfg.AutoEvaluationInterval = *schedule.IntervalSeconds

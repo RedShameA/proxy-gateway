@@ -1,5 +1,7 @@
 package evaluations
 
+import domainprofile "proxygateway/internal/domain/profile"
+
 type CandidateCountInput struct {
 	Target               Target
 	CandidateNodeIDs     []string
@@ -8,9 +10,9 @@ type CandidateCountInput struct {
 
 func ProfileEvaluationCandidateCount(input CandidateCountInput) int {
 	switch input.Target.Type {
-	case "chain":
+	case domainprofile.TypeChain:
 		return chainCandidateCount(input.CandidateNodeIDs, input.Target.ExitNodeIDs)
-	case "fastest":
+	case domainprofile.TypeFastest:
 		return limitedCandidateCount(len(input.CandidateNodeIDs), effectiveCandidateLimit(input.Target.CandidateLimit, input.SingleCandidateLimit))
 	default:
 		return 0

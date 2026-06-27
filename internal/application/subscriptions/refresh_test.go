@@ -1,22 +1,26 @@
 package subscriptions
 
-import "testing"
+import (
+	"testing"
+
+	appmaintenance "proxygateway/internal/application/maintenance"
+)
 
 func TestBuildRefreshSuccessOutcomeSplitsIgnoredAndSkippedSummaries(t *testing.T) {
 	outcome := BuildRefreshSuccessOutcome(RefreshImportResult{
 		SubscriptionID: "sub-1",
 		ImportedNodes:  3,
 		SkippedEntrySummary: []SkippedEntrySummary{
-			{Reason: "clash_proxy_group_ignored", Count: 2},
-			{Reason: "unsupported_functional_outbound", Count: 1},
-			{Reason: "malformed_entry", Count: 4},
+			{Reason: SkippedReasonClashProxyGroupIgnored, Count: 2},
+			{Reason: SkippedReasonUnsupportedFunctionalOutbound, Count: 1},
+			{Reason: SkippedReasonMalformedEntry, Count: 4},
 		},
 		StickyProfilesToEvaluate: []StickyProfileEvaluationRef{
 			{ID: "profile-1", Name: "p1", ConfigVersion: 7},
 		},
 	})
 
-	if outcome.SubscriptionID != "sub-1" || outcome.Result != "success" || outcome.ReasonCode != "completed" || outcome.ImportedCount != 3 || !outcome.EnqueueObservation {
+	if outcome.SubscriptionID != "sub-1" || outcome.Result != appmaintenance.ResultSuccess || outcome.ReasonCode != appmaintenance.ReasonCompleted || outcome.ImportedCount != 3 || !outcome.EnqueueObservation {
 		t.Fatalf("outcome base fields = %#v", outcome)
 	}
 	if outcome.IgnoredCount != 3 || outcome.SkippedCount != 4 {
@@ -35,11 +39,11 @@ func TestBuildRefreshSuccessOutcomeWarnsWhenNoNodesImported(t *testing.T) {
 		SubscriptionID: "sub-empty",
 		ImportedNodes:  0,
 		SkippedEntrySummary: []SkippedEntrySummary{
-			{Reason: "malformed_entry", Count: 2},
+			{Reason: SkippedReasonMalformedEntry, Count: 2},
 		},
 	})
 
-	if outcome.Result != "warning" || outcome.ReasonCode != "no_importable_nodes" {
+	if outcome.Result != appmaintenance.ResultWarning || outcome.ReasonCode != appmaintenance.ReasonNoImportableNodes {
 		t.Fatalf("outcome status = %#v, want warning no_importable_nodes", outcome)
 	}
 	if outcome.ImportedCount != 0 || outcome.SkippedCount != 2 {
@@ -52,8 +56,8 @@ func TestRefreshSuccessOutcomeBuildsMaintenanceDetail(t *testing.T) {
 		SubscriptionID: "sub-1",
 		ImportedNodes:  3,
 		SkippedEntrySummary: []SkippedEntrySummary{
-			{Reason: "clash_proxy_group_ignored", Count: 2},
-			{Reason: "malformed_entry", Count: 1},
+			{Reason: SkippedReasonClashProxyGroupIgnored, Count: 2},
+			{Reason: SkippedReasonMalformedEntry, Count: 1},
 		},
 	})
 	base := map[string]any{"existing": true}

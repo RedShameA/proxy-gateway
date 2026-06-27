@@ -30,7 +30,7 @@ func (s UpdateService) Execute(_ context.Context, run appmaintenance.Run) (appma
 		return appmaintenance.FinishCommand{
 			ID:            run.ID,
 			Result:        appmaintenance.ResultFailure,
-			ReasonCode:    "geoip_service_unavailable",
+			ReasonCode:    appmaintenance.ReasonGeoIPServiceUnavailable,
 			FinishedCount: 1,
 			Detail:        detail,
 			LastError:     ErrServiceUnavailable.Error(),
@@ -42,7 +42,7 @@ func (s UpdateService) Execute(_ context.Context, run appmaintenance.Run) (appma
 		return appmaintenance.FinishCommand{
 			ID:            run.ID,
 			Result:        appmaintenance.ResultFailure,
-			ReasonCode:    "geoip_update_failed",
+			ReasonCode:    appmaintenance.ReasonGeoIPUpdateFailed,
 			FinishedCount: 1,
 			Detail:        detail,
 			LastError:     err.Error(),

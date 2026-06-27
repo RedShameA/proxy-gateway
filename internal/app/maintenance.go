@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	appgeoip "proxygateway/internal/application/geoip"
 	appmaintenance "proxygateway/internal/application/maintenance"
 	appobservations "proxygateway/internal/application/observations"
 	appsettings "proxygateway/internal/application/settings"
@@ -171,7 +172,7 @@ func (r *maintenanceRunner) enqueueProfileEvaluationSchedule(now int64, settings
 	}
 	targets := appmaintenance.DueProfileEvaluationTargets(scheduleTargets, now, settings.ProfileEvaluationSeconds, settings.ChainEvaluationSeconds)
 	for _, target := range targets {
-		if runID, err := r.g.enqueueProfileEvaluationRun(target.ID, target.Name, "scheduled", target.ConfigVersion, false); err != nil {
+		if runID, err := r.g.enqueueProfileEvaluationRun(target.ID, target.Name, appmaintenance.TriggerScheduled, target.ConfigVersion, false); err != nil {
 			r.g.log().Warn("enqueue profile evaluation run failed",
 				zap.String("profile_id", target.ID),
 				zap.String("profile_name", target.Name),
@@ -181,7 +182,7 @@ func (r *maintenanceRunner) enqueueProfileEvaluationSchedule(now int64, settings
 			r.g.log().Info("maintenance run queued",
 				zap.String("run_id", runID),
 				zap.String("run_type", maintenanceTaskProfileEvaluation),
-				zap.String("trigger_source", "scheduled"),
+				zap.String("trigger_source", appmaintenance.TriggerScheduled),
 			)
 		}
 	}
@@ -195,7 +196,7 @@ func (r *maintenanceRunner) enqueueSubscriptionRefreshSchedule(now int64, settin
 	}
 	targets := appmaintenance.DueSubscriptionRefreshTargets(scheduleTargets, now, settings.SubscriptionRefreshSeconds)
 	for _, target := range targets {
-		if runID, err := r.g.enqueueSubscriptionRefreshRun(target.ID, target.Name, "scheduled"); err != nil {
+		if runID, err := r.g.enqueueSubscriptionRefreshRun(target.ID, target.Name, appmaintenance.TriggerScheduled); err != nil {
 			r.g.log().Warn("enqueue subscription refresh run failed",
 				zap.String("subscription_id", target.ID),
 				zap.String("subscription_name", target.Name),
@@ -205,7 +206,7 @@ func (r *maintenanceRunner) enqueueSubscriptionRefreshSchedule(now int64, settin
 			r.g.log().Info("maintenance run queued",
 				zap.String("run_id", runID),
 				zap.String("run_type", maintenanceTaskSubscriptionRefresh),
-				zap.String("trigger_source", "scheduled"),
+				zap.String("trigger_source", appmaintenance.TriggerScheduled),
 			)
 		}
 	}
@@ -222,8 +223,8 @@ func (r *maintenanceRunner) enqueueGeoIPUpdateSchedule(now int64, settings maint
 	}) {
 		return
 	}
-	run, err := r.g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, "scheduled", "country.mmdb", "GeoIP Database", 1, map[string]any{
-		"source": "MetaCubeX",
+	run, err := r.g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, appmaintenance.TriggerScheduled, "country.mmdb", "GeoIP Database", 1, map[string]any{
+		"source": appgeoip.SourceMetaCubeX,
 	})
 	if err != nil {
 		r.g.log().Warn("enqueue geoip update run failed", zap.Error(err))
@@ -246,7 +247,7 @@ func (r *maintenanceRunner) enqueueLogCleanupSchedule(now int64) {
 	if recent {
 		return
 	}
-	run, err := r.g.createMaintenanceRun(maintenanceRunTypeLogCleanup, "scheduled", "", "Retention cleanup", 0, map[string]any{})
+	run, err := r.g.createMaintenanceRun(maintenanceRunTypeLogCleanup, appmaintenance.TriggerScheduled, "", "Retention cleanup", 0, map[string]any{})
 	if err != nil {
 		r.g.log().Warn("enqueue log cleanup run failed", zap.Error(err))
 		return

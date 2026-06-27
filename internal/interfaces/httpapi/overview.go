@@ -6,6 +6,7 @@ import (
 	appmaintenance "proxygateway/internal/application/maintenance"
 	appoverview "proxygateway/internal/application/overview"
 	appproxy "proxygateway/internal/application/proxy"
+	domainprofile "proxygateway/internal/domain/profile"
 )
 
 type OverviewHandler struct {
@@ -50,8 +51,8 @@ func (h OverviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stateCounts := map[string]int{
-		"pending": 0, "running": 0, "waiting_observation": 0, "ready": 0, "degraded": 0,
-		"no_candidate": 0, "failed": 0, "invalid_config": 0,
+		domainprofile.StatePending: 0, domainprofile.StateRunning: 0, domainprofile.StateWaitingObservation: 0, domainprofile.StateReady: 0, domainprofile.StateDegraded: 0,
+		domainprofile.StateNoCandidate: 0, domainprofile.StateFailed: 0, domainprofile.StateInvalidConfig: 0,
 	}
 	if loadedStateCounts, err := h.OverviewRepo.LoadProfileStateCounts(r.Context()); err == nil {
 		for state, count := range loadedStateCounts {

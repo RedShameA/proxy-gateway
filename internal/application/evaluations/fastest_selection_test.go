@@ -15,7 +15,7 @@ func TestSelectFastestPathKeepsCurrentWhenCandidateIsNotClearlyBetter(t *testing
 	if selection.SelectedNodeID != "node-current" || selection.SelectedDurationMS != 100 {
 		t.Fatalf("selection = %#v", selection)
 	}
-	if selection.State != "ready" || selection.SwitchReason != "candidate_not_clearly_better" {
+	if selection.State != ProfileStateReady || selection.SwitchReason != SwitchReasonCandidateNotClearlyBetter {
 		t.Fatalf("selection state = %#v", selection)
 	}
 }
@@ -31,7 +31,7 @@ func TestSelectFastestPathSwitchesImmediatelyWhenCurrentPathProbeFails(t *testin
 	if selection.SelectedNodeID != "node-failover" || selection.SelectedDurationMS != 80 {
 		t.Fatalf("selection = %#v", selection)
 	}
-	if selection.State != "ready" || selection.SwitchReason != "current_path_failed_switch" {
+	if selection.State != ProfileStateReady || selection.SwitchReason != SwitchReasonCurrentPathFailedSwitch {
 		t.Fatalf("selection state = %#v", selection)
 	}
 }

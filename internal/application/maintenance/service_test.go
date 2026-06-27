@@ -15,8 +15,8 @@ func TestServiceCreatesStartsAndFinishesMaintenanceRun(t *testing.T) {
 	}, millisClock(1000, 1100, 1200, 1300))
 
 	created, err := service.Create(context.Background(), CreateCommand{
-		RunType:       "profile_evaluation",
-		TriggerSource: "manual",
+		RunType:       RunTypeProfileEvaluation,
+		TriggerSource: TriggerManual,
 		TargetID:      "profile_1",
 		TargetLabel:   "Work",
 		TotalCount:    -5,
@@ -85,8 +85,8 @@ func TestServiceClaimsNextQueuedRunAndListsByFilter(t *testing.T) {
 	}, millisClock(1000, 1100))
 
 	created, err := service.Create(context.Background(), CreateCommand{
-		RunType:       "subscription_refresh",
-		TriggerSource: "scheduled",
+		RunType:       RunTypeSubscriptionRefresh,
+		TriggerSource: TriggerScheduled,
 		TargetID:      "sub_1",
 		TargetLabel:   "Airport",
 		TotalCount:    1,
@@ -94,7 +94,7 @@ func TestServiceClaimsNextQueuedRunAndListsByFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claimed, ok, err := service.ClaimNext(context.Background(), "subscription_refresh")
+	claimed, ok, err := service.ClaimNext(context.Background(), RunTypeSubscriptionRefresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestServiceClaimsNextQueuedRunAndListsByFilter(t *testing.T) {
 		t.Fatalf("claimed run = %+v", claimed)
 	}
 
-	list, err := service.List(context.Background(), ListFilter{RunType: "subscription_refresh", TargetID: "sub_1", Page: 1, PageSize: 10})
+	list, err := service.List(context.Background(), ListFilter{RunType: RunTypeSubscriptionRefresh, TargetID: "sub_1", Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

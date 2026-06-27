@@ -1,13 +1,5 @@
 package maintenance
 
-const (
-	RunTypeSubscriptionRefresh = "subscription_refresh"
-	RunTypeNodeObservation     = "node_observation"
-	RunTypeProfileEvaluation   = "profile_evaluation"
-	RunTypeGeoIPUpdate         = "geoip_update"
-	RunTypeLogCleanup          = "log_cleanup"
-)
-
 type ClaimConcurrency struct {
 	SubscriptionRefresh int
 	NodeObservation     int

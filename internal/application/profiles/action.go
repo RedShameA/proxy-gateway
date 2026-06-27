@@ -1,15 +1,13 @@
 package profiles
 
-import "errors"
+import (
+	"errors"
 
-const (
-	ActionEvaluate             = "evaluate"
-	ActionSwitchToBestObserved = "switch-to-best-observed"
-	ManualSwitchReason         = "manual_switch_requested"
+	appmaintenance "proxygateway/internal/application/maintenance"
 )
 
 var (
-	ErrProfileTypeNotEvaluable = errors.New("profile_type_not_evaluable")
+	ErrProfileTypeNotEvaluable = errors.New(appmaintenance.ReasonProfileTypeNotEvaluable)
 	ErrNoCurrentPathToSwitch   = errors.New("no current path to switch from")
 	ErrUnknownAction           = errors.New("unknown action")
 )
@@ -30,7 +28,7 @@ func BuildActionPlan(cfg ConfigRecord, action string) (ActionPlan, error) {
 		}
 		return ActionPlan{
 			EnqueueEvaluation: true,
-			ResponseState:     "queued",
+			ResponseState:     appmaintenance.StateQueued,
 		}, nil
 	case ActionSwitchToBestObserved:
 		if cfg.CurrentNodeID == "" {
@@ -39,7 +37,7 @@ func BuildActionPlan(cfg ConfigRecord, action string) (ActionPlan, error) {
 		return ActionPlan{
 			CreateSwitchRun:   true,
 			EnqueueEvaluation: true,
-			ResponseState:     "finished",
+			ResponseState:     appmaintenance.StateFinished,
 			SwitchReason:      ManualSwitchReason,
 			SwitchRunDetail: map[string]any{
 				"profile_id":     cfg.ID,

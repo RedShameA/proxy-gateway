@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	apperrors "proxygateway/internal/application/apperrors"
+	appmaintenance "proxygateway/internal/application/maintenance"
 	appsubscriptions "proxygateway/internal/application/subscriptions"
 )
 
@@ -81,7 +82,7 @@ func (g *Gateway) refreshSubscriptionSource(subscriptionID string) (subscription
 		}
 		return subscriptionImportResult{}, err
 	}
-	runID, err := g.enqueueSubscriptionRefreshRun(sub.ID, sub.Name, "manual")
+	runID, err := g.enqueueSubscriptionRefreshRun(sub.ID, sub.Name, appmaintenance.TriggerManual)
 	if err != nil {
 		return subscriptionImportResult{}, newSubscriptionOperationError(apperrors.KindInternal, err.Error(), err)
 	}
@@ -94,7 +95,7 @@ func (g *Gateway) refreshSubscriptionSource(subscriptionID string) (subscription
 		switch {
 		case errors.Is(err, errInvalidSubscriptionContent):
 			return subscriptionImportResult{}, newSubscriptionOperationError(apperrors.KindBadRequest, err.Error(), refreshErr)
-		case reasonCode == "fetch_failed":
+		case reasonCode == appmaintenance.ReasonFetchFailed:
 			return subscriptionImportResult{}, newSubscriptionOperationError(apperrors.KindBadGateway, err.Error(), refreshErr)
 		default:
 			return subscriptionImportResult{}, newSubscriptionOperationError(apperrors.KindInternal, err.Error(), refreshErr)
@@ -187,7 +188,7 @@ func (g *Gateway) subscriptionSourceService() appsubscriptions.SourceService {
 
 func (g *Gateway) enqueueStickyProfileEvaluationsForRemovedNodes(refs []stickyProfileEvaluationRef) {
 	for _, ref := range refs {
-		_, _ = g.enqueueProfileEvaluationRun(ref.ID, ref.Name, "current_node_removed", ref.ConfigVersion, true)
+		_, _ = g.enqueueProfileEvaluationRun(ref.ID, ref.Name, appmaintenance.TriggerCurrentNodeRemoved, ref.ConfigVersion, true)
 	}
 }
 
@@ -212,7 +213,7 @@ func (g *Gateway) enqueueProfileEvaluationsWaitingForObservation() {
 		if g.hasUnfinishedCurrentNodeObservedEvaluation(profile.ID) {
 			continue
 		}
-		_, _ = g.enqueueProfileEvaluationRun(profile.ID, profile.Name, "current_node_observed", profile.ConfigVersion, true)
+		_, _ = g.enqueueProfileEvaluationRun(profile.ID, profile.Name, appmaintenance.TriggerCurrentNodeObserved, profile.ConfigVersion, true)
 	}
 }
 

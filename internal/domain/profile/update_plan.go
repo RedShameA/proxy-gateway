@@ -2,8 +2,6 @@ package profile
 
 import "slices"
 
-const accessProfileChangeReason = "access_profile_change"
-
 type ConfigSnapshot struct {
 	Type                         string
 	FixedNodeID                  string
@@ -54,7 +52,7 @@ func PlanConfigUpdate(original, updated ConfigSnapshot) UpdatePlan {
 		updated.CurrentNodeID = ""
 		updated.CurrentExitNodeID = ""
 		updated.CurrentPathLatencyMS = 0
-		updated.SwitchReason = accessProfileChangeReason
+		updated.SwitchReason = SwitchReasonAccessProfileChange
 		updated.LastEvaluationDetailsJSON = "{}"
 		updated.State = dynamicStateAfterUpdate(updated)
 	}
@@ -69,17 +67,17 @@ func PlanConfigUpdate(original, updated ConfigSnapshot) UpdatePlan {
 }
 
 func TypeNeedsEvaluation(profileType string) bool {
-	return profileType == "fastest" || profileType == "chain"
+	return profileType == TypeFastest || profileType == TypeChain
 }
 
 func dynamicStateAfterUpdate(cfg ConfigSnapshot) string {
 	if cfg.AutoEvaluationEnabled {
-		return "running"
+		return StateRunning
 	}
 	if cfg.CurrentNodeID != "" {
-		return "ready"
+		return StateReady
 	}
-	return "pending"
+	return StatePending
 }
 
 func evaluationConfigChanged(original, updated ConfigSnapshot) bool {

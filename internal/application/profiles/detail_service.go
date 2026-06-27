@@ -125,13 +125,13 @@ func (s DetailService) recentEvents(ctx context.Context, profileID string) []map
 
 func APINodeSourceMode(mode string) string {
 	switch domainprofile.NormalizeNodeSourceMode(mode, nil, false) {
-	case "subscriptions":
-		return "subscription"
-	case "specific_subscriptions":
-		return "selected_sources"
-	case "manual":
-		return "manual"
+	case domainprofile.NodeSourceModeSubscriptions:
+		return APINodeSourceModeSubscription
+	case domainprofile.NodeSourceModeSpecificSubscriptions:
+		return APINodeSourceModeSelectedSources
+	case domainprofile.NodeSourceModeManual:
+		return APINodeSourceModeManual
 	default:
-		return "all"
+		return APINodeSourceModeAll
 	}
 }

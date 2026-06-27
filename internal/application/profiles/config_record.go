@@ -4,7 +4,7 @@ import domainprofile "proxygateway/internal/domain/profile"
 
 func (record *ConfigRecord) ApplyDefaults() {
 	if record.EgressCountryMode == "" {
-		record.EgressCountryMode = "include"
+		record.EgressCountryMode = domainprofile.EgressCountryModeInclude
 	}
 }
 
@@ -30,21 +30,21 @@ func (record ConfigRecord) CandidateFilter() domainprofile.CandidateFilter {
 }
 
 func (record ConfigRecord) NodeStickyEnabledForType() bool {
-	return record.NodeStickyEnabled && (record.Type == "fastest" || record.Type == "chain")
+	return record.NodeStickyEnabled && (record.Type == domainprofile.TypeFastest || record.Type == domainprofile.TypeChain)
 }
 
 func (record ConfigRecord) DynamicStateAfterUpdate() string {
 	if record.AutoEvaluationEnabled {
-		return "running"
+		return domainprofile.StateRunning
 	}
 	if record.CurrentNodeID != "" {
-		return "ready"
+		return domainprofile.StateReady
 	}
-	return "pending"
+	return domainprofile.StatePending
 }
 
 func StateHasReusablePath(state string) bool {
-	return state == "ready" || state == "degraded" || state == "running"
+	return state == domainprofile.StateReady || state == domainprofile.StateDegraded || state == domainprofile.StateRunning
 }
 
 func (record *ConfigRecord) ApplyDomainSnapshot(snapshot domainprofile.ConfigSnapshot) {
