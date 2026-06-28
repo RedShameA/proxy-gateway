@@ -64,6 +64,14 @@ func TestPostgresGatewayStartsAndServesAdminAndSettings(t *testing.T) {
 		t.Fatal("postgres store should not require setup after admin setup")
 	}
 
+	var overview struct {
+		ResourceCounts map[string]any `json:"resource_counts"`
+	}
+	getJSON(t, srv.URL+"/api/overview", token, &overview)
+	if overview.ResourceCounts == nil {
+		t.Fatalf("overview resource_counts = nil")
+	}
+
 	var settings struct {
 		PublicProxyEndpoint string `json:"public_proxy_endpoint"`
 		Maintenance         struct {

@@ -80,6 +80,7 @@ func newPostgresRepositories(db *sql.DB) Repositories {
 		Admin:             postgresinfra.NewAdminRepository(db),
 		MaintenanceAux:    postgresinfra.NewMaintenanceAuxiliaryRepository(db),
 		MaintenanceRun:    postgresinfra.NewMaintenanceRunRepository(db),
+		Overview:          postgresinfra.NewOverviewRepository(db),
 		Node:              postgresinfra.NewNodeRepository(db),
 		NodeObservation:   postgresinfra.NewNodeObservationRepository(db),
 		Evaluation:        postgresinfra.NewEvaluationRepository(db),
