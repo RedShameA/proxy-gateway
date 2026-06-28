@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/endpoint"
@@ -397,12 +398,15 @@ func runtimeOutboundJSON(rawOutboundJSON, tag, detour string) (json.RawMessage, 
 
 func dialContextForTimeouts(timeouts appproxy.DialTimeouts) (context.Context, context.CancelFunc) {
 	ctx := context.Background()
-	if !timeouts.Deadline.IsZero() {
-		ctx, cancel := context.WithDeadline(ctx, timeouts.Deadline)
-		return ctx, cancel
-	}
+	deadline := timeouts.Deadline
 	if timeouts.ConnectTimeout > 0 {
-		ctx, cancel := context.WithTimeout(ctx, timeouts.ConnectTimeout)
+		connectDeadline := time.Now().Add(timeouts.ConnectTimeout)
+		if deadline.IsZero() || connectDeadline.Before(deadline) {
+			deadline = connectDeadline
+		}
+	}
+	if !deadline.IsZero() {
+		ctx, cancel := context.WithDeadline(ctx, deadline)
 		return ctx, cancel
 	}
 	return ctx, func() {}
