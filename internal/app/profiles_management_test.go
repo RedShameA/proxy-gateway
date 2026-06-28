@@ -180,6 +180,27 @@ func TestAccessProfileCanBeEditedAndDeleted(t *testing.T) {
 		t.Fatalf("config_version = %v, want incremented", edited["config_version"])
 	}
 
+	clearCountriesResp := patchJSON(t, srv.URL+"/api/access-profiles/"+created.ID, adminToken, map[string]any{
+		"name":     "jp fastest",
+		"type":     "fastest",
+		"test_url": "https://example.com",
+		"candidate_filter": map[string]any{
+			"source_mode":         "manual",
+			"source_ids":          []string{},
+			"name_include":        "tokyo",
+			"name_exclude":        "slow",
+			"egress_country_mode": "include",
+			"egress_countries":    []string{},
+		},
+	})
+	decodeOK(t, clearCountriesResp, &struct{}{})
+	var cleared map[string]any
+	getJSON(t, srv.URL+"/api/access-profiles/"+created.ID, adminToken, &cleared)
+	clearedFilter := cleared["candidate_filter"].(map[string]any)
+	if countries := clearedFilter["egress_countries"].([]any); len(countries) != 0 {
+		t.Fatalf("cleared egress_countries = %v, want empty", countries)
+	}
+
 	deleteResp := deleteRequest(t, srv.URL+"/api/access-profiles/"+created.ID, adminToken)
 	decodeOK(t, deleteResp, &struct{}{})
 	var list struct {

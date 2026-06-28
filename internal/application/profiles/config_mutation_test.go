@@ -53,6 +53,33 @@ func TestBuildUpdateConfigPlanResetsPathAndReportsSideEffects(t *testing.T) {
 	}
 }
 
+func TestBuildUpdateConfigPlanClearsCandidateFilterCountries(t *testing.T) {
+	original := DefaultConfig("profile_1")
+	original.Name = "Work"
+	original.EgressCountry = "US"
+	original.EgressCountries = []string{"US"}
+
+	plan, err := BuildUpdateConfigPlan(original, PatchRequest{
+		CandidateFilter: &PatchCandidateFilter{
+			SourceMode:        "all",
+			EgressCountryMode: "include",
+			EgressCountries:   []string{},
+		},
+	}, configMutationTestDeps())
+	if err != nil {
+		t.Fatalf("BuildUpdateConfigPlan = %v", err)
+	}
+	if plan.Config.EgressCountry != "" {
+		t.Fatalf("EgressCountry = %q, want empty", plan.Config.EgressCountry)
+	}
+	if len(plan.Config.EgressCountries) != 0 {
+		t.Fatalf("EgressCountries = %#v, want empty", plan.Config.EgressCountries)
+	}
+	if plan.EnqueueUnknownCountryObservation {
+		t.Fatal("EnqueueUnknownCountryObservation = true, want false after clearing countries")
+	}
+}
+
 func configMutationTestDeps() ConfigValidationDeps {
 	return ConfigValidationDeps{
 		DefaultTestURL: "https://example.test/generate_204",

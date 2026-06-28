@@ -51,6 +51,7 @@ func ApplyConfigPatch(cfg *ConfigRecord, req PatchRequest) {
 		cfg.NameExcludeRegex = filter.NameExclude
 		cfg.EgressCountryMode = filter.EgressCountryMode
 		cfg.EgressCountries = filter.EgressCountries
+		cfg.EgressCountry = firstPatchEgressCountry(filter.EgressCountries)
 	}
 	if req.SwitchingTolerance != nil {
 		if req.SwitchingTolerance.RelativeImprovementThreshold != nil {
@@ -71,6 +72,7 @@ func ApplyConfigPatch(cfg *ConfigRecord, req PatchRequest) {
 	}
 	if req.EgressCountries != nil {
 		cfg.EgressCountries = *req.EgressCountries
+		cfg.EgressCountry = firstPatchEgressCountry(*req.EgressCountries)
 	}
 	if req.NodeSourceMode != nil {
 		cfg.NodeSourceMode = *req.NodeSourceMode
@@ -105,6 +107,13 @@ func ApplyConfigPatch(cfg *ConfigRecord, req PatchRequest) {
 	if req.NodeStickyEnabled != nil {
 		cfg.NodeStickyEnabled = *req.NodeStickyEnabled
 	}
+}
+
+func firstPatchEgressCountry(countries []string) string {
+	if len(countries) == 0 {
+		return ""
+	}
+	return countries[0]
 }
 
 func applyEvaluationSchedulePatch(cfg *ConfigRecord, schedule PatchEvaluationSchedule) {
