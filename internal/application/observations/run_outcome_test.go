@@ -66,3 +66,17 @@ func TestBuildCompletedOutcomeReportsAllFailedAndRefreshFollowUp(t *testing.T) {
 		t.Fatalf("failure reasons = %#v", outcome.FailureReasons)
 	}
 }
+
+func TestSubscriptionObservationTriggersWaitingProfiles(t *testing.T) {
+	for _, trigger := range []string{appmaintenance.TriggerSubscriptionRefresh, appmaintenance.TriggerSubscriptionImport} {
+		outcome := BuildCompletedOutcome(trigger, []RunResult{{NodeID: "node-1", Name: "Node 1", OK: true}})
+		if !outcome.EnqueueWaitingProfiles {
+			t.Fatalf("trigger %q did not enqueue waiting profiles", trigger)
+		}
+	}
+
+	outcome := BuildCompletedOutcome(appmaintenance.TriggerManual, []RunResult{{NodeID: "node-1", Name: "Node 1", OK: true}})
+	if outcome.EnqueueWaitingProfiles {
+		t.Fatalf("manual trigger enqueued waiting profiles")
+	}
+}

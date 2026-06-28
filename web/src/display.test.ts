@@ -100,6 +100,7 @@ describe('run labels', () => {
   it('returns result, trigger and reason labels', () => {
     expect(runResultLabel('success')).toBe('成功');
     expect(runTriggerSourceLabel('access_profile_change')).toBe('策略配置变更');
+    expect(runTriggerSourceLabel('subscription_import')).toBe('订阅导入');
     expect(runTriggerSourceLabel('current_node_observed')).toBe('原节点移除后重评');
     expect(runTriggerSourceLabel('current_node_removed')).toBe('当前节点已移除');
     expect(runReasonLabel('expired_after_restart')).toBe('重启后过期取消');
@@ -381,7 +382,7 @@ describe('sourceModeLabel', () => {
 describe('stable API enum display coverage', () => {
   it('covers maintenance run enums without leaking raw codes', () => {
     const runTypes = ['subscription_refresh', 'node_observation', 'profile_evaluation', 'profile_switch', 'geoip_update', 'log_cleanup', 'startup_cleanup'];
-    const runTriggers = ['scheduled', 'manual', 'startup', 'access_profile_change', 'node_observation', 'subscription_refresh', 'current_node_removed', 'current_node_observed', 'country_profile_unknown_country', 'pending_rerun', 'manual_node_import'];
+    const runTriggers = ['scheduled', 'manual', 'startup', 'access_profile_change', 'node_observation', 'subscription_refresh', 'subscription_import', 'current_node_removed', 'current_node_observed', 'country_profile_unknown_country', 'pending_rerun', 'manual_node_import'];
     const runStates = ['queued', 'running', 'finished'];
     const runResults = ['success', 'warning', 'failure', 'skipped', 'cancelled'];
     const runReasons = [

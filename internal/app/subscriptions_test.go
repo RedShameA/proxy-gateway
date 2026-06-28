@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"proxygateway/internal/app"
+	maintenanceapp "proxygateway/internal/application/maintenance"
 	"proxygateway/internal/testsupport/apptest"
 	"testing"
 	"time"
@@ -68,6 +70,90 @@ func TestImportSingboxJSONSubscriptionCreatesNodes(t *testing.T) {
 	decodeOK(t, arrayResp, &arraySub)
 	if arraySub.ImportedNodes != 1 || arraySub.SkippedEntries != 0 {
 		t.Fatalf("raw outbound array import = %+v, want 1 imported and 0 skipped", arraySub)
+	}
+}
+
+func TestCreateSubscriptionQueuesSubscriptionImportObservationRun(t *testing.T) {
+	t.Parallel()
+
+	gw := apptest.NewGateway(t, app.WithoutMaintenanceRunner())
+	srv := httptest.NewServer(gw.Handler())
+	t.Cleanup(srv.Close)
+	adminToken := setupAdmin(t, srv.URL)
+
+	subResp := postJSON(t, srv.URL+"/api/subscriptions", adminToken, map[string]any{
+		"name":        "observe-after-import",
+		"source_type": "local",
+		"content": `{"outbounds":[
+			{"type":"http","tag":"observed-import-node","server":"127.0.0.1","server_port":18080}
+		]}`,
+	})
+	var sub struct {
+		ID            string `json:"id"`
+		ImportedNodes int    `json:"imported_nodes"`
+	}
+	decodeOK(t, subResp, &sub)
+	if sub.ImportedNodes != 1 {
+		t.Fatalf("imported_nodes = %d, want 1", sub.ImportedNodes)
+	}
+
+	var runs struct {
+		Items []struct {
+			RunType       string `json:"run_type"`
+			TriggerSource string `json:"trigger_source"`
+			State         string `json:"state"`
+			TotalCount    int    `json:"total_count"`
+		} `json:"items"`
+	}
+	getJSON(t, srv.URL+"/api/maintenance/runs?run_type="+maintenanceapp.RunTypeNodeObservation, adminToken, &runs)
+	var found bool
+	for _, run := range runs.Items {
+		if run.TriggerSource == maintenanceapp.TriggerSubscriptionImport {
+			found = true
+			if run.RunType != maintenanceapp.RunTypeNodeObservation || run.State != maintenanceapp.StateQueued || run.TotalCount != 1 {
+				t.Fatalf("subscription import observation run = %#v, want queued single target", run)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("node observation runs = %#v, want subscription_import run", runs.Items)
+	}
+}
+
+func TestCreateSubscriptionWithoutImportableNodesDoesNotQueueImportObservationRun(t *testing.T) {
+	t.Parallel()
+
+	gw := apptest.NewGateway(t, app.WithoutMaintenanceRunner())
+	srv := httptest.NewServer(gw.Handler())
+	t.Cleanup(srv.Close)
+	adminToken := setupAdmin(t, srv.URL)
+
+	subResp := postJSON(t, srv.URL+"/api/subscriptions", adminToken, map[string]any{
+		"name":        "no-importable-nodes",
+		"source_type": "local",
+		"content": `{"outbounds":[
+			{"type":"direct","tag":"skip-direct"}
+		]}`,
+	})
+	var sub struct {
+		ImportedNodes  int `json:"imported_nodes"`
+		SkippedEntries int `json:"skipped_entries"`
+	}
+	decodeOK(t, subResp, &sub)
+	if sub.ImportedNodes != 0 || sub.SkippedEntries != 1 {
+		t.Fatalf("subscription import = %#v, want 0 imported and 1 skipped", sub)
+	}
+
+	var runs struct {
+		Items []struct {
+			TriggerSource string `json:"trigger_source"`
+		} `json:"items"`
+	}
+	getJSON(t, srv.URL+"/api/maintenance/runs?run_type="+maintenanceapp.RunTypeNodeObservation, adminToken, &runs)
+	for _, run := range runs.Items {
+		if run.TriggerSource == maintenanceapp.TriggerSubscriptionImport {
+			t.Fatalf("node observation runs = %#v, want no subscription_import run", runs.Items)
+		}
 	}
 }
 

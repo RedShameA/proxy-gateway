@@ -68,6 +68,11 @@ func BuildCompletedOutcome(triggerSource string, results []RunResult) RunOutcome
 		outcome.Result = appmaintenance.ResultFailure
 		outcome.ReasonCode = appmaintenance.ReasonAllFailed
 	}
-	outcome.EnqueueWaitingProfiles = triggerSource == appmaintenance.TriggerSubscriptionRefresh
+	outcome.EnqueueWaitingProfiles = isSubscriptionObservationTrigger(triggerSource)
 	return outcome
+}
+
+func isSubscriptionObservationTrigger(triggerSource string) bool {
+	return triggerSource == appmaintenance.TriggerSubscriptionRefresh ||
+		triggerSource == appmaintenance.TriggerSubscriptionImport
 }

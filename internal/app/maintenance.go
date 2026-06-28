@@ -357,22 +357,23 @@ func (g *Gateway) notifyMaintenanceRunner() {
 	}
 }
 
-func (g *Gateway) enqueueObservationForSubscriptionNodes(subscriptionID string) {
+func (g *Gateway) enqueueObservationForSubscriptionNodes(subscriptionID, triggerSource string) (bool, error) {
 	targets, err := g.maintenanceAuxRepo.ListSubscriptionNodeObservationTargets(context.Background(), subscriptionID)
 	if err != nil {
-		return
+		return false, err
 	}
 	settings, _ := g.loadMaintenanceSettings()
-	plan := appobservations.PlanSubscriptionRefreshAggregateRun(toObservationNodeTargets(nodeRecordsFromObservationScheduleTargets(targets)), settings.EgressIPProbeURL)
+	plan := appobservations.PlanSubscriptionObservationAggregateRun(toObservationNodeTargets(nodeRecordsFromObservationScheduleTargets(targets)), settings.EgressIPProbeURL, triggerSource)
 	if !plan.CreateRun {
-		return
+		return false, nil
 	}
 	if _, err := g.createNodeObservationRun(plan.TriggerSource, plan.Scope, toObservationNodeRecords(plan.Targets), plan.ProbeURL); err != nil {
-		return
+		return false, err
 	}
 	if plan.NotifyRunner {
 		g.notifyMaintenanceRunner()
 	}
+	return true, nil
 }
 
 func nodeRecordsFromObservationScheduleTargets(targets []appmaintenance.NodeObservationScheduleTarget) []nodeRecord {

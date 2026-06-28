@@ -388,6 +388,44 @@ func TestPostgresGatewaySubscriptionCRUDListPatchAndDelete(t *testing.T) {
 	}
 }
 
+func TestPostgresGatewayCreateSubscriptionQueuesImportObservationRun(t *testing.T) {
+	t.Parallel()
+
+	gw := newPostgresGatewayForAppTest(t)
+	srv := httptest.NewServer(gw.Handler())
+	t.Cleanup(srv.Close)
+	adminToken := setupAdmin(t, srv.URL)
+
+	createResp := postJSON(t, srv.URL+"/api/subscriptions", adminToken, map[string]any{
+		"name":        "pg-import-observation",
+		"source_type": "local",
+		"content": `{"outbounds":[
+			{"type":"http","tag":"pg-import-observation-node","server":"127.0.0.1","server_port":18080}
+		]}`,
+	})
+	var created struct {
+		ImportedNodes int `json:"imported_nodes"`
+	}
+	decodeOK(t, createResp, &created)
+	if created.ImportedNodes != 1 {
+		t.Fatalf("imported_nodes = %d, want 1", created.ImportedNodes)
+	}
+
+	var runs struct {
+		Items []maintenanceRunForAppTest `json:"items"`
+	}
+	getJSON(t, srv.URL+"/api/maintenance/runs?run_type="+maintenanceapp.RunTypeNodeObservation, adminToken, &runs)
+	for _, run := range runs.Items {
+		if run.TriggerSource == maintenanceapp.TriggerSubscriptionImport {
+			if run.State != maintenanceapp.StateQueued || run.TotalCount != 1 {
+				t.Fatalf("subscription import observation run = %#v, want queued total 1", run)
+			}
+			return
+		}
+	}
+	t.Fatalf("node observation runs = %#v, want subscription_import run", runs.Items)
+}
+
 func TestPostgresGatewaySubscriptionRefreshRunWarnsWhenNoNodesImported(t *testing.T) {
 	t.Parallel()
 

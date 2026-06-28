@@ -43,6 +43,7 @@ export function runTriggerSourceLabel(t: string): string {
     access_profile_change: '策略配置变更',
     node_observation: '节点观测',
     subscription_refresh: '订阅刷新',
+    subscription_import: '订阅导入',
     current_node_removed: '当前节点已移除',
     current_node_observed: '原节点移除后重评',
     country_profile_unknown_country: '未知出口国家观测',

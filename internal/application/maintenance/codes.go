@@ -31,6 +31,7 @@ const (
 	TriggerAccessProfileChange          = "access_profile_change"
 	TriggerNodeObservation              = "node_observation"
 	TriggerSubscriptionRefresh          = "subscription_refresh"
+	TriggerSubscriptionImport           = "subscription_import"
 	TriggerCurrentNodeRemoved           = "current_node_removed"
 	TriggerCurrentNodeObserved          = "current_node_observed"
 	TriggerCountryProfileUnknownCountry = "country_profile_unknown_country"

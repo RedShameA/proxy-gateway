@@ -322,7 +322,13 @@ func (g *Gateway) runSubscriptionRefreshMaintenanceRun(runID string) error {
 	g.logSubscriptionRefreshEntrySummary(run.ID, outcome.SubscriptionID, appsubscriptions.SummaryTypeSkipped, outcome.SkippedSummary)
 	g.logSubscriptionRefreshOutcome(run.ID, outcome)
 	if outcome.EnqueueObservation {
-		g.enqueueObservationForSubscriptionNodes(sub.ID)
+		if _, err := g.enqueueObservationForSubscriptionNodes(sub.ID, maintenanceapp.TriggerSubscriptionRefresh); err != nil {
+			g.log().Warn("enqueue subscription node observation failed",
+				zap.String("subscription_id", sub.ID),
+				zap.String("trigger_source", maintenanceapp.TriggerSubscriptionRefresh),
+				zap.Error(err),
+			)
+		}
 	}
 	g.enqueueStickyProfileEvaluationsForRemovedNodes(outcome.StickyProfilesToEvaluate)
 	return g.finishMaintenanceRun(run.ID, outcome.Result, outcome.ReasonCode, 1, detail, "")

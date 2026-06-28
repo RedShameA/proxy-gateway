@@ -23,6 +23,19 @@ func TestPlanSubscriptionRefreshAggregateRunQueuesAllNodesAndNotifiesRunner(t *t
 	}
 }
 
+func TestPlanSubscriptionObservationAggregateRunUsesProvidedTrigger(t *testing.T) {
+	plan := PlanSubscriptionObservationAggregateRun([]NodeTarget{
+		{ID: "node-1", Name: "Node 1"},
+	}, "https://probe.example", appmaintenance.TriggerSubscriptionImport)
+
+	if !plan.CreateRun || !plan.NotifyRunner {
+		t.Fatalf("plan = %#v, want queued notifying run", plan)
+	}
+	if plan.TriggerSource != appmaintenance.TriggerSubscriptionImport || plan.Scope != appmaintenance.NodeObservationScopeAllNodes {
+		t.Fatalf("plan identity = %#v", plan)
+	}
+}
+
 func TestPlanSubscriptionRefreshAggregateRunSkipsCreationWithoutTargets(t *testing.T) {
 	plan := PlanSubscriptionRefreshAggregateRun(nil, "https://probe.example")
 	if plan.CreateRun || plan.NotifyRunner || plan.FinishImmediately {

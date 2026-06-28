@@ -35,12 +35,16 @@ func PlanScheduledAggregateRun(targets []NodeTarget, probeURL string, hasUnfinis
 }
 
 func PlanSubscriptionRefreshAggregateRun(targets []NodeTarget, probeURL string) ScheduledAggregateRunPlan {
+	return PlanSubscriptionObservationAggregateRun(targets, probeURL, appmaintenance.TriggerSubscriptionRefresh)
+}
+
+func PlanSubscriptionObservationAggregateRun(targets []NodeTarget, probeURL, triggerSource string) ScheduledAggregateRunPlan {
 	if len(targets) == 0 {
 		return ScheduledAggregateRunPlan{}
 	}
 	return ScheduledAggregateRunPlan{
 		CreateRun:     true,
-		TriggerSource: appmaintenance.TriggerSubscriptionRefresh,
+		TriggerSource: triggerSource,
 		Scope:         appmaintenance.NodeObservationScopeAllNodes,
 		ProbeURL:      probeURL,
 		Targets:       append([]NodeTarget{}, targets...),

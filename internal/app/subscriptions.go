@@ -7,6 +7,8 @@ import (
 	apperrors "proxygateway/internal/application/apperrors"
 	appmaintenance "proxygateway/internal/application/maintenance"
 	appsubscriptions "proxygateway/internal/application/subscriptions"
+
+	"go.uber.org/zap"
 )
 
 type skippedEntrySummarySet = appsubscriptions.SkippedEntrySummarySet
@@ -71,6 +73,13 @@ func (g *Gateway) createSubscriptionSource(input subscriptionCreateInput) (subsc
 		return subscriptionImportResult{}, newSubscriptionOperationError(apperrors.KindBadGateway, err.Error(), subscriptionFetchError{err: err})
 	}
 	g.invalidateRuntimeFingerprints(result.DeletedFingerprints)
+	if _, err := g.enqueueObservationForSubscriptionNodes(result.ImportResult.ID, appmaintenance.TriggerSubscriptionImport); err != nil {
+		g.log().Warn("enqueue subscription node observation failed",
+			zap.String("subscription_id", result.ImportResult.ID),
+			zap.String("trigger_source", appmaintenance.TriggerSubscriptionImport),
+			zap.Error(err),
+		)
+	}
 	return result.ImportResult, nil
 }
 
