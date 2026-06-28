@@ -80,7 +80,7 @@ const detailKeyLabels: Record<string, string> = {
 export function MaintenanceRunRow({ run, onClick }: { run: MaintenanceRunSummary; onClick: (run: MaintenanceRunSummary) => void }) {
   const progress = run.total_count > 0 ? `${run.finished_count}/${run.total_count}` : '';
   const statusText = run.state === 'finished' ? runResultLabel(run.result) : runStateLabel(run.state);
-  const left = [runTypeLabel(run.run_type), runTriggerSourceLabel(run.trigger_source), run.target_label].filter(Boolean).join(' · ');
+  const left = [runTypeLabel(run.run_type), runTriggerSourceLabel(run.trigger_source)].filter(Boolean).join(' · ');
   return (
     <button
       type="button"
@@ -112,6 +112,17 @@ export function MaintenanceRunRow({ run, onClick }: { run: MaintenanceRunSummary
 }
 
 export function MaintenanceRunDrawer({ run, visible, onClose }: { run: MaintenanceRunSummary | null; visible: boolean; onClose: () => void }) {
+  const target = run ? maintenanceRunTargetDisplay(run) : { visible: false, value: '-' };
+  const summaryRows = run ? [
+    { key: '触发来源', value: runTriggerSourceLabel(run.trigger_source) },
+    ...(target.visible ? [{ key: '目标', value: target.value }] : []),
+    { key: '状态', value: run.state === 'finished' ? runResultLabel(run.result) : runStateLabel(run.state) },
+    { key: '原因', value: run.reason_code ? runReasonLabel(run.reason_code) : '-' },
+    { key: '进度', value: run.total_count > 0 ? `${run.finished_count}/${run.total_count}` : '-' },
+    { key: '创建时间', value: formatTime(run.created_at) },
+    { key: '开始时间', value: formatTime(run.started_at) },
+    { key: '结束时间', value: formatTime(run.finished_at) },
+  ] : [];
   const detailRows = run ? Object.entries(run.detail || {}).map(([key, value]) => ({
     key: detailKeyLabel(key),
     value: <DetailValue fieldKey={key} value={value} />,
@@ -120,22 +131,30 @@ export function MaintenanceRunDrawer({ run, visible, onClose }: { run: Maintenan
     <SideSheet title={run ? runTypeLabel(run.run_type) : '维护历史'} visible={visible} onCancel={onClose} width={520}>
       {run && (
         <div style={{ display: 'grid', gap: 16 }}>
-          <Descriptions row size="small" data={[
-            { key: '触发来源', value: runTriggerSourceLabel(run.trigger_source) },
-            { key: '目标', value: run.target_label || run.target_id || '-' },
-            { key: '状态', value: run.state === 'finished' ? runResultLabel(run.result) : runStateLabel(run.state) },
-            { key: '原因', value: run.reason_code ? runReasonLabel(run.reason_code) : '-' },
-            { key: '进度', value: run.total_count > 0 ? `${run.finished_count}/${run.total_count}` : '-' },
-            { key: '创建时间', value: formatTime(run.created_at) },
-            { key: '开始时间', value: formatTime(run.started_at) },
-            { key: '结束时间', value: formatTime(run.finished_at) },
-          ]} />
+          <Descriptions row size="small" data={summaryRows} />
           {run.last_error && <Text type="danger" style={detailValueStyle}>错误: {run.last_error}</Text>}
           <Descriptions row size="small" data={detailRows.length > 0 ? detailRows : [{ key: '详情', value: '-' }]} />
         </div>
       )}
     </SideSheet>
   );
+}
+
+export function maintenanceRunTargetDisplay(run: MaintenanceRunSummary): { visible: boolean; value: string } {
+  if (!maintenanceRunShouldShowTarget(run)) {
+    return { visible: false, value: '-' };
+  }
+  return { visible: true, value: run.target_label || run.target_id || '-' };
+}
+
+function maintenanceRunShouldShowTarget(run: MaintenanceRunSummary): boolean {
+  if (run.run_type === 'subscription_refresh' || run.run_type === 'profile_evaluation' || run.run_type === 'profile_switch') {
+    return true;
+  }
+  if (run.run_type === 'node_observation') {
+    return run.detail?.target_scope === 'single_node';
+  }
+  return false;
 }
 
 function DetailValue({ fieldKey, value }: { fieldKey: string; value: unknown }) {

@@ -140,7 +140,7 @@ func (g *Gateway) httpAPIHandler() http.Handler {
 			Auth:   adminAuth,
 			Status: func() any { return g.geoIPStatus() },
 			Update: func() (httpapi.GeoIPUpdateResult, error) {
-				run, err := g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, appmaintenance.TriggerManual, "country.mmdb", "GeoIP Database", 1, map[string]any{"source": appgeoip.SourceMetaCubeX})
+				run, err := g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, appmaintenance.TriggerManual, "", "", 1, map[string]any{"source": appgeoip.SourceMetaCubeX})
 				if err != nil {
 					return httpapi.GeoIPUpdateResult{}, apperrors.New(apperrors.KindInternal, "create geoip update run", err)
 				}

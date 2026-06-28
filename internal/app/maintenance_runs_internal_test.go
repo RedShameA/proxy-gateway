@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	appgeoip "proxygateway/internal/application/geoip"
 )
 
 func TestManualAllNodeObservationCancelsOnlyAggregateRuns(t *testing.T) {
@@ -513,7 +515,7 @@ func TestGeoIPUpdateRunRecordsFailure(t *testing.T) {
 
 	g := NewForTest(t)
 	g.geoIP = nil
-	run, err := g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, "manual", "country.mmdb", "GeoIP Database", 1, map[string]any{})
+	run, err := g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, "manual", "", "", 1, map[string]any{"source": appgeoip.SourceMetaCubeX})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,8 +530,37 @@ func TestGeoIPUpdateRunRecordsFailure(t *testing.T) {
 	if finished.State != maintenanceRunStateFinished || finished.Result != maintenanceRunResultFailure || finished.ReasonCode != "geoip_service_unavailable" {
 		t.Fatalf("geoip run = %#v, want failure geoip_service_unavailable", finished)
 	}
+	if finished.TargetID != "" || finished.TargetLabel != "" {
+		t.Fatalf("geoip target = %q/%q, want empty", finished.TargetID, finished.TargetLabel)
+	}
+	if maintenanceRunDetail(finished)["source"] != appgeoip.SourceMetaCubeX {
+		t.Fatalf("geoip detail = %#v, want source %s", maintenanceRunDetail(finished), appgeoip.SourceMetaCubeX)
+	}
 	if finished.LastError == "" {
 		t.Fatalf("geoip run last_error should be set: %#v", finished)
+	}
+}
+
+func TestScheduledGeoIPAndLogCleanupRunsUseEmptyTargets(t *testing.T) {
+	t.Parallel()
+
+	g := NewForTest(t)
+	now := time.Now().UnixMilli()
+	g.maintenance.enqueueGeoIPUpdateSchedule(now, normalizeMaintenanceSettings(maintenanceSettings{
+		GeoIPUpdateTime: "00:00",
+	}))
+	geoIPRun := latestMaintenanceRunByTypeForTest(t, g, maintenanceTaskGeoIPUpdate)
+	if geoIPRun.TargetID != "" || geoIPRun.TargetLabel != "" {
+		t.Fatalf("scheduled geoip target = %q/%q, want empty", geoIPRun.TargetID, geoIPRun.TargetLabel)
+	}
+	if maintenanceRunDetail(geoIPRun)["source"] != appgeoip.SourceMetaCubeX {
+		t.Fatalf("scheduled geoip detail = %#v, want source %s", maintenanceRunDetail(geoIPRun), appgeoip.SourceMetaCubeX)
+	}
+
+	g.maintenance.enqueueLogCleanupSchedule(now)
+	logCleanupRun := latestMaintenanceRunByTypeForTest(t, g, maintenanceRunTypeLogCleanup)
+	if logCleanupRun.TargetID != "" || logCleanupRun.TargetLabel != "" {
+		t.Fatalf("scheduled log cleanup target = %q/%q, want empty", logCleanupRun.TargetID, logCleanupRun.TargetLabel)
 	}
 }
 
@@ -561,7 +592,7 @@ func TestLogCleanupRunUsesIndependentRequestAndMaintenanceRetention(t *testing.T
 	g.setKVSetting("log_retention_days", "1")
 	g.setKVSetting("maintenance_history_retention_enabled", "true")
 	g.setKVSetting("maintenance_history_retention_days", "1")
-	cleanupRun, err := g.createMaintenanceRun(maintenanceRunTypeLogCleanup, "manual", "", "Retention cleanup", 0, map[string]any{})
+	cleanupRun, err := g.createMaintenanceRun(maintenanceRunTypeLogCleanup, "manual", "", "", 0, map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -580,6 +611,9 @@ func TestLogCleanupRunUsesIndependentRequestAndMaintenanceRetention(t *testing.T
 	finished, err := g.loadMaintenanceRun(cleanupRun.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if finished.TargetID != "" || finished.TargetLabel != "" {
+		t.Fatalf("cleanup target = %q/%q, want empty", finished.TargetID, finished.TargetLabel)
 	}
 	detail := maintenanceRunDetail(finished)
 	if detail["deleted_request_logs"] != float64(1) || detail["deleted_maintenance_runs"] != float64(1) {
@@ -616,7 +650,7 @@ func TestLogCleanupRunRespectsRetentionCleanupSwitches(t *testing.T) {
 	g.setKVSetting("log_retention_days", "1")
 	g.setKVSetting("maintenance_history_retention_enabled", "false")
 	g.setKVSetting("maintenance_history_retention_days", "1")
-	cleanupRun, err := g.createMaintenanceRun(maintenanceRunTypeLogCleanup, "manual", "", "Retention cleanup", 0, map[string]any{})
+	cleanupRun, err := g.createMaintenanceRun(maintenanceRunTypeLogCleanup, "manual", "", "", 0, map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}

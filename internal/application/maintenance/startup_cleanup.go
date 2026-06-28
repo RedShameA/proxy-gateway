@@ -42,7 +42,6 @@ func (s StartupCleanupService) Execute(ctx context.Context) (StartupCleanupResul
 	startup, err := s.Runs.Create(ctx, CreateCommand{
 		RunType:       RunTypeStartupCleanup,
 		TriggerSource: TriggerStartup,
-		TargetLabel:   "Startup cleanup",
 		TotalCount:    len(activeRuns),
 		Detail:        detail,
 	})

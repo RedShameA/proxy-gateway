@@ -60,6 +60,9 @@ func TestStartupCleanupServiceCancelsActiveRunsAndRecordsSummary(t *testing.T) {
 	if startup.RunType != RunTypeStartupCleanup || startup.State != StateFinished || startup.Result != ResultSuccess {
 		t.Fatalf("startup run = %#v", startup)
 	}
+	if startup.TargetID != "" || startup.TargetLabel != "" {
+		t.Fatalf("startup target = %q/%q, want empty", startup.TargetID, startup.TargetLabel)
+	}
 	if startup.FinishedCount != 2 || startup.Detail["cancelled_count"] != 2 || startup.Detail["repaired_profile_count"] != 2 || startup.Detail["invalid_profile_count"] != 1 {
 		t.Fatalf("startup detail = %#v", startup)
 	}

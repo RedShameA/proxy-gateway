@@ -223,7 +223,7 @@ func (r *maintenanceRunner) enqueueGeoIPUpdateSchedule(now int64, settings maint
 	}) {
 		return
 	}
-	run, err := r.g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, appmaintenance.TriggerScheduled, "country.mmdb", "GeoIP Database", 1, map[string]any{
+	run, err := r.g.createMaintenanceRun(maintenanceTaskGeoIPUpdate, appmaintenance.TriggerScheduled, "", "", 1, map[string]any{
 		"source": appgeoip.SourceMetaCubeX,
 	})
 	if err != nil {
@@ -247,7 +247,7 @@ func (r *maintenanceRunner) enqueueLogCleanupSchedule(now int64) {
 	if recent {
 		return
 	}
-	run, err := r.g.createMaintenanceRun(maintenanceRunTypeLogCleanup, appmaintenance.TriggerScheduled, "", "Retention cleanup", 0, map[string]any{})
+	run, err := r.g.createMaintenanceRun(maintenanceRunTypeLogCleanup, appmaintenance.TriggerScheduled, "", "", 0, map[string]any{})
 	if err != nil {
 		r.g.log().Warn("enqueue log cleanup run failed", zap.Error(err))
 		return
