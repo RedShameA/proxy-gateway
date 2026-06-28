@@ -17,6 +17,7 @@ import (
 	appsettings "proxygateway/internal/application/settings"
 	appsubscriptions "proxygateway/internal/application/subscriptions"
 	databaseinfra "proxygateway/internal/infrastructure/database"
+	postgresinfra "proxygateway/internal/infrastructure/postgres"
 	sqliteinfra "proxygateway/internal/infrastructure/sqlite"
 )
 
@@ -44,7 +45,7 @@ func NewRepositories(handle Handle) (Repositories, error) {
 	case "", databaseinfra.DialectSQLite:
 		return newSQLiteRepositories(handle.DB), nil
 	case databaseinfra.DialectPostgres:
-		return Repositories{}, fmt.Errorf("database dialect %q repositories are not implemented yet", handle.Dialect)
+		return newPostgresRepositories(handle.DB), nil
 	default:
 		return Repositories{}, fmt.Errorf("unsupported database dialect %q", handle.Dialect)
 	}
@@ -68,5 +69,24 @@ func newSQLiteRepositories(db *sql.DB) Repositories {
 		ProfileConfig:     sqliteinfra.NewProfileConfigRepository(db),
 		ProfileCredential: sqliteinfra.NewProfileCredentialRepository(db),
 		Subscription:      sqliteinfra.NewSubscriptionRepository(db),
+	}
+}
+
+func newPostgresRepositories(db *sql.DB) Repositories {
+	return Repositories{
+		GeoIPStatus:       postgresinfra.NewGeoIPStatusRepository(db),
+		KVSettings:        postgresinfra.NewKVSettingsRepository(db),
+		SystemSettings:    postgresinfra.NewSystemSettingsRepository(db),
+		Admin:             postgresinfra.NewAdminRepository(db),
+		MaintenanceAux:    postgresinfra.NewMaintenanceAuxiliaryRepository(db),
+		MaintenanceRun:    postgresinfra.NewMaintenanceRunRepository(db),
+		Node:              postgresinfra.NewNodeRepository(db),
+		NodeObservation:   postgresinfra.NewNodeObservationRepository(db),
+		Evaluation:        postgresinfra.NewEvaluationRepository(db),
+		RequestLog:        postgresinfra.NewRequestLogRepository(db),
+		ProxyCredential:   postgresinfra.NewProxyCredentialRepository(db),
+		ProfileConfig:     postgresinfra.NewProfileConfigRepository(db),
+		ProfileCredential: postgresinfra.NewProfileCredentialRepository(db),
+		Subscription:      postgresinfra.NewSubscriptionRepository(db),
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"proxygateway/internal/app"
+	storageinfra "proxygateway/internal/infrastructure/storage"
 
 	"go.uber.org/zap"
 )
@@ -26,7 +27,34 @@ func main() {
 }
 
 func run() int {
-	logger, err := app.NewProcessLoggerFromEnv()
+	return runWithDeps(runDeps{
+		dataDir:    defaultDataDir,
+		listenAddr: defaultListenAddr,
+		newLogger:  app.NewProcessLoggerFromEnv,
+		lookupEnv:  os.LookupEnv,
+		newGateway: func(dataDir string, logger *zap.Logger, storageConfig storageinfra.Config) (gatewayRunner, error) {
+			return app.New(dataDir, app.WithLogger(logger), app.WithStorageConfig(storageConfig))
+		},
+		listen: net.Listen,
+	})
+}
+
+type gatewayRunner interface {
+	Close() error
+	Serve(net.Listener) error
+}
+
+type runDeps struct {
+	dataDir    string
+	listenAddr string
+	newLogger  func() (*zap.Logger, error)
+	lookupEnv  func(string) (string, bool)
+	newGateway func(dataDir string, logger *zap.Logger, storageConfig storageinfra.Config) (gatewayRunner, error)
+	listen     func(network, address string) (net.Listener, error)
+}
+
+func runWithDeps(deps runDeps) int {
+	logger, err := deps.newLogger()
 	if err != nil {
 		panic(err)
 	}
@@ -39,9 +67,15 @@ func run() int {
 		License:  "AGPL-3.0-or-later",
 	})
 
-	gateway, err := app.New(defaultDataDir, app.WithLogger(logger))
+	storageConfig, err := storageinfra.ConfigFromEnv(deps.dataDir, deps.lookupEnv)
 	if err != nil {
-		logger.Error("open gateway failed", zap.String("data_dir", defaultDataDir), zap.Error(err))
+		logger.Error("database configuration failed", zap.Error(err))
+		return 1
+	}
+
+	gateway, err := deps.newGateway(deps.dataDir, logger, storageConfig)
+	if err != nil {
+		logger.Error("open gateway failed", zap.String("data_dir", deps.dataDir), zap.String("db_driver", storageConfig.Driver), zap.Error(err))
 		return 1
 	}
 	defer func() {
@@ -50,9 +84,9 @@ func run() int {
 		}
 	}()
 
-	ln, err := net.Listen("tcp", defaultListenAddr)
+	ln, err := deps.listen("tcp", deps.listenAddr)
 	if err != nil {
-		logger.Error("listen failed", zap.String("addr", defaultListenAddr), zap.Error(err))
+		logger.Error("listen failed", zap.String("addr", deps.listenAddr), zap.Error(err))
 		return 1
 	}
 	logger.Info("proxy gateway listening", zap.String("addr", ln.Addr().String()))

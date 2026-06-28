@@ -2,7 +2,10 @@ package storage
 
 import (
 	"context"
+	"errors"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	appnodes "proxygateway/internal/application/nodes"
@@ -13,9 +16,204 @@ import (
 func TestNodeRepositoryContract(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	handle, repos, closeRepos := newRepositoriesForTest(t)
+	for _, backend := range nodeRepositoryBackends(t) {
+		backend := backend
+		t.Run(backend.name, func(t *testing.T) {
+			if backend.parallel {
+				t.Parallel()
+			}
+			handle, repos, closeRepos := backend.open(t)
+			defer closeRepos()
+			testNodeRepositoryContract(t, handle, repos)
+		})
+	}
+}
+
+func TestPostgresNodeTransactionCommitAndRollbackVisibility(t *testing.T) {
+	t.Parallel()
+
+	handle, repos, closeRepos := newPostgresRepositoriesForTest(t)
 	defer closeRepos()
+
+	rollbackErr := errors.New("rollback node")
+	err := handle.WithTx(context.Background(), func(tx appuow.Tx) error {
+		_, err := appnodes.Service{NewNodeID: func() (string, error) {
+			return "node_rollback", nil
+		}}.Upsert(tx.NodeUpsertRepository(), appnodes.UpsertInput{
+			Fingerprint:  "fp_rollback",
+			Name:         "Rollback",
+			Type:         "direct",
+			OutboundJSON: `{"type":"direct"}`,
+			SourceID:     "manual",
+			SourceName:   "Manual",
+			SourceType:   "manual",
+			NowMillis:    1000,
+		})
+		if err != nil {
+			return err
+		}
+		return rollbackErr
+	})
+	if !errors.Is(err, rollbackErr) {
+		t.Fatalf("rollback error = %v, want rollbackErr", err)
+	}
+	if _, found, err := repos.Node.Load(context.Background(), "node_rollback"); err != nil || found {
+		t.Fatalf("rolled back node found=%t err=%v", found, err)
+	}
+
+	if err := handle.WithTx(context.Background(), func(tx appuow.Tx) error {
+		_, err := appnodes.Service{NewNodeID: func() (string, error) {
+			return "node_commit", nil
+		}}.Upsert(tx.NodeUpsertRepository(), appnodes.UpsertInput{
+			Fingerprint:  "fp_commit",
+			Name:         "Commit",
+			Type:         "direct",
+			OutboundJSON: `{"type":"direct"}`,
+			SourceID:     "manual",
+			SourceName:   "Manual",
+			SourceType:   "manual",
+			NowMillis:    1100,
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	node, found, err := repos.Node.Load(context.Background(), "node_commit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || node.Name != "Commit" {
+		t.Fatalf("committed node = %#v found=%t", node, found)
+	}
+}
+
+func TestPostgresNodeCreateReturnsGeneratedID(t *testing.T) {
+	t.Parallel()
+
+	handle, repos, closeRepos := newPostgresRepositoriesForTest(t)
+	defer closeRepos()
+
+	service := appnodes.CreateService{
+		Runner: NewTxRunners(handle),
+		NewNodeID: func() (string, error) {
+			return "node_generated_id", nil
+		},
+	}
+	nodeID, err := service.Create(context.Background(), appnodes.CreateCommand{
+		Node: appnodes.OutboundNode{
+			Name:         "Generated ID",
+			Type:         "direct",
+			OutboundJSON: `{"type":"direct"}`,
+		},
+		Source: appnodes.SourceInput{
+			ID:   "manual",
+			Name: "Manual",
+			Type: "manual",
+		},
+		NowMillis: 1200,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nodeID != "node_generated_id" {
+		t.Fatalf("nodeID = %q, want generated ID", nodeID)
+	}
+	node, found, err := repos.Node.Load(context.Background(), nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || node.Name != "Generated ID" {
+		t.Fatalf("created node = %#v found=%t", node, found)
+	}
+}
+
+func TestPostgresTransactionDoesNotExposeNestedRunner(t *testing.T) {
+	t.Parallel()
+
+	handle, _, closeRepos := newPostgresRepositoriesForTest(t)
+	defer closeRepos()
+
+	if err := handle.WithTx(context.Background(), func(tx appuow.Tx) error {
+		if _, ok := any(tx).(appuow.Runner); ok {
+			t.Fatal("postgres transaction should not expose nested WithTx")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNodeRepositoryManualUpdateAndDeleteContract(t *testing.T) {
+	t.Parallel()
+
+	for _, backend := range nodeRepositoryBackends(t) {
+		backend := backend
+		t.Run(backend.name, func(t *testing.T) {
+			if backend.parallel {
+				t.Parallel()
+			}
+			handle, repos, closeRepos := backend.open(t)
+			defer closeRepos()
+
+			upsertNodeForStorageTest(t, handle, "node_manual", "fp_manual", "Manual", "http", 100)
+
+			updateService := appnodes.ManagementService{
+				Repo:   repos.Node,
+				Runner: NewTxRunners(handle),
+				NewNodeID: func() (string, error) {
+					return "node_unused", nil
+				},
+				Now: func() int64 { return 200 },
+			}
+			enabled := false
+			result, err := updateService.UpdateManual(context.Background(), appnodes.ManualUpdateCommand{
+				NodeID: "node_manual",
+				Node: appnodes.OutboundNode{
+					Name:         "Manual Updated",
+					Type:         "socks5",
+					OutboundJSON: `{"type":"socks"}`,
+				},
+				Enabled: &enabled,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.NodeID != "node_manual" || result.Split {
+				t.Fatalf("manual update result = %#v", result)
+			}
+			loaded, found, err := repos.Node.Load(context.Background(), "node_manual")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !found || loaded.Name != "Manual Updated" || loaded.Type != "socks5" || loaded.Enabled {
+				t.Fatalf("updated node = %#v found=%t", loaded, found)
+			}
+			sources, err := repos.Node.ListSources(context.Background(), "node_manual")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(sources) != 1 || sources[0].DisplayName != "Manual Updated" {
+				t.Fatalf("updated sources = %#v", sources)
+			}
+
+			deleteResult, err := appnodes.DeleteService{Runner: NewTxRunners(handle)}.DeleteManualSource(context.Background(), "node_manual")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(deleteResult.DeletedFingerprints) != 1 {
+				t.Fatalf("delete result = %#v", deleteResult)
+			}
+			if _, found, err := repos.Node.Load(context.Background(), "node_manual"); err != nil || found {
+				t.Fatalf("deleted node found=%t err=%v", found, err)
+			}
+		})
+	}
+}
+
+func testNodeRepositoryContract(t *testing.T, handle Handle, repos Repositories) {
+	t.Helper()
+
+	ctx := context.Background()
 
 	upsertNodeForStorageTest(t, handle, "node_alpha", "fp_alpha", "Alpha", "direct", 100)
 	upsertNodeForStorageTest(t, handle, "node_pending", "fp_pending", "Pending", "http", 101)
@@ -141,7 +339,22 @@ func TestNodeRepositoryContract(t *testing.T) {
 	}
 }
 
-func newRepositoriesForTest(t *testing.T) (Handle, Repositories, func()) {
+type nodeRepositoryBackend struct {
+	name     string
+	parallel bool
+	open     func(*testing.T) (Handle, Repositories, func())
+}
+
+func nodeRepositoryBackends(t *testing.T) []nodeRepositoryBackend {
+	t.Helper()
+
+	return []nodeRepositoryBackend{
+		{name: "sqlite", parallel: true, open: newSQLiteRepositoriesForTest},
+		{name: "postgres", open: newPostgresRepositoriesForTest},
+	}
+}
+
+func newSQLiteRepositoriesForTest(t *testing.T) (Handle, Repositories, func()) {
 	t.Helper()
 
 	handle, err := Open(Config{DataDir: t.TempDir()})
@@ -158,6 +371,31 @@ func newRepositoriesForTest(t *testing.T) (Handle, Repositories, func()) {
 		t.Fatal(err)
 	}
 	return handle, repos, func() { _ = handle.Close() }
+}
+
+func newRepositoriesForTest(t *testing.T) (Handle, Repositories, func()) {
+	t.Helper()
+	return newSQLiteRepositoriesForTest(t)
+}
+
+func newPostgresRepositoriesForTest(t *testing.T) (Handle, Repositories, func()) {
+	t.Helper()
+
+	dsn := strings.TrimSpace(os.Getenv("PROXYGATEWAY_TEST_POSTGRES_DSN"))
+	if dsn == "" {
+		t.Skip("PROXYGATEWAY_TEST_POSTGRES_DSN is not set")
+	}
+	handle, closeHandle := newIsolatedPostgresStorageHandleForTest(t, dsn)
+	if err := Migrate(context.Background(), handle); err != nil {
+		closeHandle()
+		t.Fatal(err)
+	}
+	repos, err := NewRepositories(handle)
+	if err != nil {
+		closeHandle()
+		t.Fatal(err)
+	}
+	return handle, repos, closeHandle
 }
 
 func upsertNodeForStorageTest(t *testing.T, handle Handle, id, fingerprint, name, nodeType string, nowMillis int64) {

@@ -8,6 +8,7 @@ import (
 
 	maintenanceapp "proxygateway/internal/application/maintenance"
 	databaseinfra "proxygateway/internal/infrastructure/database"
+	postgresinfra "proxygateway/internal/infrastructure/postgres"
 	sqliteinfra "proxygateway/internal/infrastructure/sqlite"
 )
 
@@ -20,7 +21,7 @@ func NewMaintenanceRunRepository(handle Handle) (maintenanceapp.Repository, erro
 	case "", databaseinfra.DialectSQLite:
 		return newSQLiteMaintenanceRunRepository(handle.DB), nil
 	case databaseinfra.DialectPostgres:
-		return nil, fmt.Errorf("database dialect %q maintenance run repository is not implemented yet", handle.Dialect)
+		return postgresinfra.NewMaintenanceRunRepository(handle.DB), nil
 	default:
 		return nil, fmt.Errorf("unsupported database dialect %q", handle.Dialect)
 	}

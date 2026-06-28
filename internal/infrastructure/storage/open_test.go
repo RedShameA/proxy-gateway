@@ -12,6 +12,99 @@ import (
 	sqliteinfra "proxygateway/internal/infrastructure/sqlite"
 )
 
+func TestConfigFromEnvDefaultsToSQLite(t *testing.T) {
+	t.Parallel()
+
+	config, err := ConfigFromEnv("/data", func(string) (string, bool) {
+		return "", false
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if config.Driver != DriverSQLite {
+		t.Fatalf("Driver = %q, want %q", config.Driver, DriverSQLite)
+	}
+	if config.DataDir != "/data" {
+		t.Fatalf("DataDir = %q, want /data", config.DataDir)
+	}
+	if config.DSN != "" {
+		t.Fatalf("DSN = %q, want empty", config.DSN)
+	}
+}
+
+func TestConfigFromEnvNormalizesPostgresAlias(t *testing.T) {
+	t.Parallel()
+
+	lookup := func(key string) (string, bool) {
+		switch key {
+		case EnvDBDriver:
+			return " postgresql ", true
+		case EnvDBDSN:
+			return "postgres://proxy:secret@example.local/proxygateway", true
+		default:
+			return "", false
+		}
+	}
+	config, err := ConfigFromEnv("/data", lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if config.Driver != DriverPostgres {
+		t.Fatalf("Driver = %q, want %q", config.Driver, DriverPostgres)
+	}
+	if config.DSN != "postgres://proxy:secret@example.local/proxygateway" {
+		t.Fatalf("DSN was not preserved in config")
+	}
+}
+
+func TestConfigFromEnvRejectsDSNWithoutDriver(t *testing.T) {
+	t.Parallel()
+
+	secretDSN := "postgres://proxy:super-secret@example.local/proxygateway"
+	_, err := ConfigFromEnv("/data", func(key string) (string, bool) {
+		if key == EnvDBDSN {
+			return secretDSN, true
+		}
+		return "", false
+	})
+	if err == nil {
+		t.Fatal("expected DSN-only config to be rejected")
+	}
+	if strings.Contains(err.Error(), secretDSN) || strings.Contains(err.Error(), "super-secret") {
+		t.Fatalf("error leaked DSN secret: %v", err)
+	}
+	if !strings.Contains(err.Error(), EnvDBDriver) {
+		t.Fatalf("error = %q, want mention %s", err, EnvDBDriver)
+	}
+}
+
+func TestConfigFromEnvRejectsInvalidDriverWithoutLeakingDSN(t *testing.T) {
+	t.Parallel()
+
+	secretDSN := "postgres://proxy:super-secret@example.local/proxygateway"
+	_, err := ConfigFromEnv("/data", func(key string) (string, bool) {
+		switch key {
+		case EnvDBDriver:
+			return "mysql", true
+		case EnvDBDSN:
+			return secretDSN, true
+		default:
+			return "", false
+		}
+	})
+	if err == nil {
+		t.Fatal("expected invalid driver to be rejected")
+	}
+	if strings.Contains(err.Error(), secretDSN) || strings.Contains(err.Error(), "super-secret") {
+		t.Fatalf("error leaked DSN secret: %v", err)
+	}
+	if !strings.Contains(err.Error(), "mysql") {
+		t.Fatalf("error = %q, want invalid driver value", err)
+	}
+}
+
 func TestOpenDefaultsToSQLiteDataDirPath(t *testing.T) {
 	t.Parallel()
 
@@ -49,15 +142,15 @@ func TestOpenSQLiteUsesExplicitPath(t *testing.T) {
 	}
 }
 
-func TestOpenRejectsPostgresUntilImplemented(t *testing.T) {
+func TestOpenRejectsPostgresWithoutDSN(t *testing.T) {
 	t.Parallel()
 
-	_, err := Open(Config{Driver: string(databaseinfra.DialectPostgres), DSN: "postgres://example"})
+	_, err := Open(Config{Driver: string(databaseinfra.DialectPostgres)})
 	if err == nil {
-		t.Fatal("expected postgres driver to be rejected until implemented")
+		t.Fatal("expected postgres driver without DSN to be rejected")
 	}
-	if !strings.Contains(err.Error(), "not supported yet") {
-		t.Fatalf("postgres error = %q, want not supported yet", err)
+	if !strings.Contains(err.Error(), "DSN is empty") {
+		t.Fatalf("postgres error = %q, want empty DSN", err)
 	}
 }
 
@@ -82,54 +175,15 @@ func TestMigrateRunsSQLiteSchema(t *testing.T) {
 	}
 }
 
-func TestMigrateRejectsPostgresUntilImplemented(t *testing.T) {
+func TestMigrateRejectsNilPostgresHandle(t *testing.T) {
 	t.Parallel()
 
 	err := Migrate(context.Background(), Handle{Dialect: databaseinfra.DialectPostgres})
 	if err == nil {
-		t.Fatal("expected postgres migrations to be rejected until implemented")
+		t.Fatal("expected nil postgres handle to be rejected")
 	}
-	if !strings.Contains(err.Error(), "not implemented yet") {
-		t.Fatalf("postgres migration error = %q, want not implemented yet", err)
-	}
-}
-
-func TestNewRepositoriesRejectsPostgresUntilImplemented(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewRepositories(Handle{Dialect: databaseinfra.DialectPostgres})
-	if err == nil {
-		t.Fatal("expected postgres repositories to be rejected until implemented")
-	}
-	if !strings.Contains(err.Error(), "not implemented yet") {
-		t.Fatalf("postgres repositories error = %q, want not implemented yet", err)
-	}
-}
-
-func TestNewMaintenanceRunRepositoryRejectsPostgresUntilImplemented(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewMaintenanceRunRepository(Handle{Dialect: databaseinfra.DialectPostgres})
-	if err == nil {
-		t.Fatal("expected postgres maintenance run repository to be rejected until implemented")
-	}
-	if !strings.Contains(err.Error(), "not implemented yet") {
-		t.Fatalf("postgres maintenance run repository error = %q, want not implemented yet", err)
-	}
-}
-
-func TestWithTxRejectsPostgresUntilImplemented(t *testing.T) {
-	t.Parallel()
-
-	err := (Handle{Dialect: databaseinfra.DialectPostgres}).WithTx(context.Background(), func(_ appuow.Tx) error {
-		t.Fatal("transaction callback should not be called")
-		return nil
-	})
-	if err == nil {
-		t.Fatal("expected postgres transactions to be rejected until implemented")
-	}
-	if !strings.Contains(err.Error(), "not implemented yet") {
-		t.Fatalf("postgres transaction error = %q, want not implemented yet", err)
+	if !strings.Contains(err.Error(), "database handle is nil") {
+		t.Fatalf("postgres migration error = %q, want nil handle", err)
 	}
 }
 

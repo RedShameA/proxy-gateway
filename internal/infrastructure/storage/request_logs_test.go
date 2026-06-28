@@ -10,9 +10,42 @@ import (
 func TestRequestLogRepositoryContract(t *testing.T) {
 	t.Parallel()
 
+	for _, backend := range nodeRepositoryBackends(t) {
+		backend := backend
+		t.Run(backend.name, func(t *testing.T) {
+			if backend.parallel {
+				t.Parallel()
+			}
+			_, repos, closeRepos := backend.open(t)
+			defer closeRepos()
+			testRequestLogRepositoryContract(t, repos.RequestLog)
+		})
+	}
+}
+
+func TestRequestLogStartupRepairContract(t *testing.T) {
+	t.Parallel()
+
+	for _, backend := range nodeRepositoryBackends(t) {
+		backend := backend
+		t.Run(backend.name, func(t *testing.T) {
+			if backend.parallel {
+				t.Parallel()
+			}
+			handle, repos, closeRepos := backend.open(t)
+			defer closeRepos()
+			testRequestLogStartupRepairContract(t, handle, repos.RequestLog)
+		})
+	}
+}
+
+func testRequestLogRepositoryContract(t *testing.T, repo appproxy.RequestLogRepository) {
+	t.Helper()
+	if repo == nil {
+		t.Fatal("request log repository is nil")
+	}
+
 	ctx := context.Background()
-	repo, closeRepo := newRequestLogRepositoryForTest(t)
-	defer closeRepo()
 
 	if err := repo.InsertStart(ctx, appproxy.RequestLogStartRecord{
 		ID:                      "log_running",
@@ -64,6 +97,20 @@ func TestRequestLogRepositoryContract(t *testing.T) {
 		t.Fatalf("success item = %#v", success)
 	}
 
+	filteredSuccesses, err := repo.List(ctx, appproxy.RequestLogListFilter{
+		AccessProfile: "profile_1",
+		Target:        "example.test:443",
+		Result:        appproxy.RequestLogResultSuccess,
+		Page:          1,
+		PageSize:      10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filteredSuccesses.Total != 1 || len(filteredSuccesses.Items) != 1 || filteredSuccesses.Items[0].ID != "log_running" {
+		t.Fatalf("filtered success result = %#v, want log_running", filteredSuccesses)
+	}
+
 	credentialMatches, err := repo.List(ctx, appproxy.RequestLogListFilter{Credential: "client", Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
@@ -105,21 +152,45 @@ func TestRequestLogRepositoryContract(t *testing.T) {
 	}
 }
 
-func newRequestLogRepositoryForTest(t *testing.T) (appproxy.RequestLogRepository, func()) {
+func testRequestLogStartupRepairContract(t *testing.T, handle Handle, repo appproxy.RequestLogRepository) {
 	t.Helper()
+	if repo == nil {
+		t.Fatal("request log repository is nil")
+	}
 
-	handle, err := Open(Config{DataDir: t.TempDir()})
+	ctx := context.Background()
+	if err := repo.InsertStart(ctx, appproxy.RequestLogStartRecord{
+		ID:                      "log_interrupted",
+		Timestamp:               3000,
+		ProxyCredentialID:       "cred_interrupted",
+		ProxyCredential:         "client",
+		AccessProfileID:         "profile_interrupted",
+		AccessProfile:           "profile",
+		AccessProfileIdentifier: "profile_ident",
+		TargetHost:              "long.example.test:443",
+		ProxyPath:               "node",
+		ProxyPathJSON:           `{"path_type":"single","node":{"id":"node_interrupted"}}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := Migrate(ctx, handle); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	failures, err := repo.List(ctx, appproxy.RequestLogListFilter{Result: appproxy.RequestLogResultFailure, Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Migrate(context.Background(), handle); err != nil {
-		_ = handle.Close()
-		t.Fatal(err)
+	if failures.Total != 1 || len(failures.Items) != 1 {
+		t.Fatalf("repaired failures = %#v, want one failed completed log", failures)
 	}
-	repos, err := NewRepositories(handle)
-	if err != nil {
-		_ = handle.Close()
-		t.Fatal(err)
+	item := failures.Items[0]
+	if item.ID != "log_interrupted" || item.State != appproxy.RequestLogStateCompleted || item.Success == nil || *item.Success {
+		t.Fatalf("repaired item status = %#v, want completed failure", item)
 	}
-	return repos.RequestLog, func() { _ = handle.Close() }
+	if item.Error != "gateway restarted before request completed" || item.DurationMS != 1 {
+		t.Fatalf("repaired item error/duration = %q/%d, want restart error and duration 1", item.Error, item.DurationMS)
+	}
 }

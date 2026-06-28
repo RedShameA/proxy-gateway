@@ -22,6 +22,7 @@ type Option func(*options)
 type options struct {
 	logger                   *zap.Logger
 	disableMaintenanceRunner bool
+	storageConfig            *storageinfra.Config
 }
 
 func WithLogger(logger *zap.Logger) Option {
@@ -33,6 +34,12 @@ func WithLogger(logger *zap.Logger) Option {
 func WithoutMaintenanceRunner() Option {
 	return func(options *options) {
 		options.disableMaintenanceRunner = true
+	}
+}
+
+func WithStorageConfig(config storageinfra.Config) Option {
+	return func(options *options) {
+		options.storageConfig = &config
 	}
 }
 
@@ -49,9 +56,16 @@ func New(dataDir string, opts ...Option) (*Gateway, error) {
 		logger.Error("create data directory failed", zap.String("data_dir", dataDir), zap.Error(err))
 		return nil, err
 	}
-	store, err := storageinfra.Open(storageinfra.Config{DataDir: dataDir})
+	storageConfig := storageinfra.Config{DataDir: dataDir}
+	if config.storageConfig != nil {
+		storageConfig = *config.storageConfig
+		if storageConfig.DataDir == "" {
+			storageConfig.DataDir = dataDir
+		}
+	}
+	store, err := storageinfra.Open(storageConfig)
 	if err != nil {
-		logger.Error("open storage failed", zap.String("data_dir", dataDir), zap.Error(err))
+		logger.Error("open storage failed", zap.String("data_dir", dataDir), zap.String("db_driver", storageConfig.Driver), zap.Error(err))
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -77,7 +91,7 @@ func New(dataDir string, opts ...Option) (*Gateway, error) {
 		_ = protocolEngine.Close()
 		cancel()
 		_ = store.Close()
-		logger.Error("database migration failed", zap.String("data_dir", dataDir), zap.Error(err))
+		logger.Error("database migration failed", zap.String("data_dir", dataDir), zap.String("db_driver", string(store.Dialect)), zap.Error(err))
 		return nil, err
 	}
 	repos, err := storageinfra.NewRepositories(store)
@@ -85,7 +99,7 @@ func New(dataDir string, opts ...Option) (*Gateway, error) {
 		_ = protocolEngine.Close()
 		cancel()
 		_ = store.Close()
-		logger.Error("create storage repositories failed", zap.String("data_dir", dataDir), zap.Error(err))
+		logger.Error("create storage repositories failed", zap.String("data_dir", dataDir), zap.String("db_driver", string(store.Dialect)), zap.Error(err))
 		return nil, err
 	}
 	g.geoIPStatusRepo = repos.GeoIPStatus
@@ -108,7 +122,7 @@ func New(dataDir string, opts ...Option) (*Gateway, error) {
 		_ = protocolEngine.Close()
 		cancel()
 		_ = store.Close()
-		logger.Error("startup cleanup failed", zap.String("data_dir", dataDir), zap.Error(err))
+		logger.Error("startup cleanup failed", zap.String("data_dir", dataDir), zap.String("db_driver", string(store.Dialect)), zap.Error(err))
 		return nil, err
 	}
 	g.geoIP = geoipinfra.NewService(dataDir, g.geoIPStatusRepo)
@@ -120,7 +134,7 @@ func New(dataDir string, opts ...Option) (*Gateway, error) {
 	g.requestLogService = appproxy.NewRequestLogService(g.requestLogs, func() (string, error) {
 		return prefixedID("log")
 	}, g.logger.Named("request_log"))
-	g.log().Info("gateway initialized", zap.String("data_dir", dataDir))
+	g.log().Info("gateway initialized", zap.String("data_dir", dataDir), zap.String("db_driver", string(store.Dialect)))
 	return g, nil
 }
 

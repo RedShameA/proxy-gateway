@@ -2,8 +2,10 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	appnodes "proxygateway/internal/application/nodes"
 	appsubscriptions "proxygateway/internal/application/subscriptions"
 	appuow "proxygateway/internal/application/uow"
 )
@@ -11,9 +13,174 @@ import (
 func TestSubscriptionRepositoryContract(t *testing.T) {
 	t.Parallel()
 
+	for _, backend := range nodeRepositoryBackends(t) {
+		backend := backend
+		t.Run(backend.name, func(t *testing.T) {
+			if backend.parallel {
+				t.Parallel()
+			}
+			handle, repos, closeRepos := backend.open(t)
+			defer closeRepos()
+			testSubscriptionRepositoryContract(t, handle, repos)
+		})
+	}
+}
+
+func TestPostgresSubscriptionRefreshImportRollsBackHalfWrittenChanges(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
-	handle, repos, closeRepos := newRepositoriesForTest(t)
+	handle, repos, closeRepos := newPostgresRepositoriesForTest(t)
 	defer closeRepos()
+
+	initialImport := appsubscriptions.ImportService{
+		Runner: NewTxRunners(handle),
+		NewNodeID: func() (string, error) {
+			return "node_old", nil
+		},
+	}
+	if _, _, err := initialImport.Import(ctx, appsubscriptions.ImportCommand{
+		SubscriptionID: "sub_rollback",
+		Name:           "Rollback",
+		SourceType:     "local",
+		Content:        "old",
+		NowMillis:      1000,
+	}, appsubscriptions.ParsedImportContent{
+		Nodes: []appsubscriptions.ParsedNode{{
+			Name:       "old-node",
+			Type:       "http",
+			Server:     "127.0.0.1",
+			ServerPort: 18080,
+		}},
+		SkippedSummaryJSON: "[]",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	nextIDs := []string{"node_new"}
+	refreshImport := appsubscriptions.ImportService{
+		Runner: NewTxRunners(handle),
+		NewNodeID: func() (string, error) {
+			id := nextIDs[0]
+			nextIDs = nextIDs[1:]
+			return id, nil
+		},
+	}
+	_, _, err := refreshImport.Import(ctx, appsubscriptions.ImportCommand{
+		SubscriptionID: "sub_rollback",
+		Name:           "Rollback",
+		SourceType:     "local",
+		Content:        "new",
+		Refresh:        true,
+		NowMillis:      2000,
+	}, appsubscriptions.ParsedImportContent{
+		Nodes: []appsubscriptions.ParsedNode{
+			{
+				Name:       "new-node",
+				Type:       "http",
+				Server:     "127.0.0.1",
+				ServerPort: 18081,
+			},
+			{
+				Name:       "bad-node",
+				Type:       "http",
+				Server:     "127.0.0.1",
+				ServerPort: 18082,
+				TLSJSON:    []byte(`{`),
+			},
+		},
+		SkippedSummaryJSON: "[]",
+	})
+	if err == nil {
+		t.Fatal("expected refresh import to fail")
+	}
+
+	sub, found, err := repos.Subscription.Load(ctx, "sub_rollback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || sub.Content != "old" || sub.UpdatedAt != 1000 {
+		t.Fatalf("subscription after rollback = %#v found=%t, want old content", sub, found)
+	}
+	if _, found, err := repos.Node.Load(ctx, "node_new"); err != nil || found {
+		t.Fatalf("half-imported node_new found=%t err=%v", found, err)
+	}
+	oldNode, found, err := repos.Node.Load(ctx, "node_old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || oldNode.Name != "old-node" {
+		t.Fatalf("old node after rollback = %#v found=%t", oldNode, found)
+	}
+}
+
+func TestPostgresSubscriptionTransactionRollbackAndCommitVisibility(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	handle, repos, closeRepos := newPostgresRepositoriesForTest(t)
+	defer closeRepos()
+
+	rollbackErr := errors.New("rollback subscription")
+	err := handle.WithTx(ctx, func(tx appuow.Tx) error {
+		if err := tx.SubscriptionImportRepository().CreateImport(appsubscriptions.ImportRecord{
+			ID:                 "sub_tx_rollback",
+			Name:               "Tx Rollback",
+			SourceType:         "local",
+			Content:            "rollback",
+			SkippedSummaryJSON: "[]",
+			NowMillis:          1000,
+		}); err != nil {
+			return err
+		}
+		nodeService := appnodes.Service{NewNodeID: func() (string, error) {
+			return "node_tx_rollback", nil
+		}}
+		if _, err := nodeService.Upsert(tx.NodeUpsertRepository(), appnodes.UpsertInput{
+			Fingerprint:  "fp_tx_rollback",
+			Name:         "Tx Rollback",
+			Type:         "direct",
+			OutboundJSON: `{"type":"direct"}`,
+			SourceID:     "sub_tx_rollback",
+			SourceName:   "Tx Rollback",
+			SourceType:   "subscription",
+			NowMillis:    1000,
+		}); err != nil {
+			return err
+		}
+		return rollbackErr
+	})
+	if !errors.Is(err, rollbackErr) {
+		t.Fatalf("rollback error = %v, want rollbackErr", err)
+	}
+	if _, found, err := repos.Subscription.Load(ctx, "sub_tx_rollback"); err != nil || found {
+		t.Fatalf("rolled back subscription found=%t err=%v", found, err)
+	}
+	if _, found, err := repos.Node.Load(ctx, "node_tx_rollback"); err != nil || found {
+		t.Fatalf("rolled back node found=%t err=%v", found, err)
+	}
+
+	if err := handle.WithTx(ctx, func(tx appuow.Tx) error {
+		return tx.SubscriptionImportRepository().CreateImport(appsubscriptions.ImportRecord{
+			ID:                 "sub_tx_commit",
+			Name:               "Tx Commit",
+			SourceType:         "local",
+			Content:            "commit",
+			SkippedSummaryJSON: "[]",
+			NowMillis:          1100,
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if sub, found, err := repos.Subscription.Load(ctx, "sub_tx_commit"); err != nil || !found || sub.Name != "Tx Commit" {
+		t.Fatalf("committed subscription = %#v found=%t err=%v", sub, found, err)
+	}
+}
+
+func testSubscriptionRepositoryContract(t *testing.T, handle Handle, repos Repositories) {
+	t.Helper()
+
+	ctx := context.Background()
 
 	if err := handle.WithTx(ctx, func(tx appuow.Tx) error {
 		return tx.SubscriptionImportRepository().CreateImport(appsubscriptions.ImportRecord{

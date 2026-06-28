@@ -1,2 +1,2 @@
-// Package postgres is reserved for a future PostgreSQL storage implementation.
+// Package postgres contains the PostgreSQL storage implementation.
 package postgres

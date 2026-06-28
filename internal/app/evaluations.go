@@ -242,6 +242,9 @@ func (g *Gateway) profileCurrentNodeIDWithContext(ctx context.Context, profileID
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if g.evaluationRepo == nil {
+		return ""
+	}
 	nodeID, err := g.evaluationRepo.CurrentNodeID(ctx, profileID)
 	if err != nil {
 		return ""
@@ -256,6 +259,9 @@ func (g *Gateway) candidateNodes(filter candidateFilter) ([]nodeRecord, error) {
 func (g *Gateway) candidateNodesWithContext(ctx context.Context, filter candidateFilter) ([]nodeRecord, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if g.evaluationRepo == nil {
+		return []nodeRecord{}, nil
 	}
 	records, err := appevaluations.CandidateNodes(ctx, g.evaluationRepo, g.nodeRepo.Load, filter)
 	if err != nil {
@@ -275,6 +281,9 @@ func (g *Gateway) nodeMatchesCandidateFilter(node nodeRecord, filter candidateFi
 func (g *Gateway) nodeMatchesCandidateFilterWithContext(ctx context.Context, node nodeRecord, filter candidateFilter) bool {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if g.evaluationRepo == nil {
+		return false
 	}
 	return appevaluations.NodeMatchesCandidateFilter(ctx, g.evaluationRepo, nodeRecordToApplication(node), filter)
 }

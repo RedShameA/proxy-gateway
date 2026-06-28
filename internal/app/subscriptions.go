@@ -200,6 +200,9 @@ func (g *Gateway) profileRetainsNodeWithContext(ctx context.Context, profileID, 
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if g.evaluationRepo == nil {
+		return false
+	}
 	exists, err := g.evaluationRepo.ProfileRetainsNode(ctx, profileID, nodeID)
 	return err == nil && exists
 }
