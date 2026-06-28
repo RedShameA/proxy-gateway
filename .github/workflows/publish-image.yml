@@ -116,9 +116,24 @@ jobs:
       - name: Run Go tests
         run: go test ./...
 
+      - name: Resolve PostgreSQL test DSN
+        shell: bash
+        run: |
+          for attempt in $(seq 1 60); do
+            for host in 127.0.0.1 postgres; do
+              if timeout 1 bash -c ":</dev/tcp/${host}/5432" 2>/dev/null; then
+                echo "PROXYGATEWAY_TEST_POSTGRES_DSN=postgres://proxygateway:proxygateway@${host}:5432/proxygateway_test?sslmode=disable" >> "$GITHUB_ENV"
+                echo "PostgreSQL test DSN resolved to host: ${host}"
+                exit 0
+              fi
+            done
+            sleep 1
+          done
+
+          echo "PostgreSQL service is not reachable on 127.0.0.1:5432 or postgres:5432." >&2
+          exit 1
+
       - name: Run PostgreSQL tests
-        env:
-          PROXYGATEWAY_TEST_POSTGRES_DSN: postgres://proxygateway:proxygateway@127.0.0.1:5432/proxygateway_test?sslmode=disable
         run: go test ./internal/app ./internal/infrastructure/storage ./internal/infrastructure/postgres -count=1
 
       - name: Install frontend dependencies
