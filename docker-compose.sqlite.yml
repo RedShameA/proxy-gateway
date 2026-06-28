@@ -1,0 +1,25 @@
+name: proxy-gateway
+
+# SQLite 模板。
+# 使用前先复制为 docker-compose.yml，然后运行：
+#   docker compose up -d
+#
+# 常用覆盖：
+#   PROXYGATEWAY_PORT=28080 docker compose up -d
+#   PROXYGATEWAY_IMAGE=ghcr.io/redshamea/proxy-gateway:v0.2.0 docker compose up -d
+#   PROXYGATEWAY_LOG_LEVEL=debug docker compose up -d
+
+x-proxygateway-image: &proxygateway-image ${PROXYGATEWAY_IMAGE:-ghcr.io/redshamea/proxy-gateway:latest}
+x-proxygateway-port: &proxygateway-port ${PROXYGATEWAY_PORT:-8080}:8080
+x-proxygateway-data: &proxygateway-data ${PROXYGATEWAY_DATA_DIR:-./data/app}:/data
+
+services:
+  proxygateway:
+    image: *proxygateway-image
+    ports:
+      - *proxygateway-port
+    volumes:
+      - *proxygateway-data
+    environment:
+      PROXYGATEWAY_LOG_LEVEL: ${PROXYGATEWAY_LOG_LEVEL:-info}
+    restart: unless-stopped

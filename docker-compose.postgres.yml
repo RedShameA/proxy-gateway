@@ -1,0 +1,46 @@
+name: proxy-gateway
+
+# PostgreSQL 模板。
+# 使用前先复制为 docker-compose.yml，然后运行：
+#   docker compose up -d
+#
+# 常用覆盖：
+#   PROXYGATEWAY_PORT=28080 docker compose up -d
+#   PROXYGATEWAY_IMAGE=ghcr.io/redshamea/proxy-gateway:v0.2.0 docker compose up -d
+#   PROXYGATEWAY_LOG_LEVEL=debug docker compose up -d
+#   POSTGRES_PASSWORD=change-me docker compose up -d
+
+x-proxygateway-image: &proxygateway-image ${PROXYGATEWAY_IMAGE:-ghcr.io/redshamea/proxy-gateway:latest}
+x-proxygateway-port: &proxygateway-port ${PROXYGATEWAY_PORT:-8080}:8080
+x-proxygateway-data: &proxygateway-data ${PROXYGATEWAY_DATA_DIR:-./data/app}:/data
+
+services:
+  proxygateway:
+    image: *proxygateway-image
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - *proxygateway-port
+    volumes:
+      - *proxygateway-data
+    environment:
+      PROXYGATEWAY_LOG_LEVEL: ${PROXYGATEWAY_LOG_LEVEL:-info}
+      PROXYGATEWAY_DB_DRIVER: postgres
+      PROXYGATEWAY_DB_DSN: ${PROXYGATEWAY_DB_DSN:-postgres://${POSTGRES_USER:-proxygateway}:${POSTGRES_PASSWORD:-proxygateway}@postgres:5432/${POSTGRES_DB:-proxygateway}?sslmode=disable}
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-proxygateway}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-proxygateway}
+      POSTGRES_DB: ${POSTGRES_DB:-proxygateway}
+    volumes:
+      - ${POSTGRES_DATA_DIR:-./data/postgres}:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-proxygateway} -d ${POSTGRES_DB:-proxygateway}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped

@@ -24,6 +24,48 @@ docker run -d \
 
 打开 `http://localhost:8080`。首次启动时，如果还没有管理员密码，系统会引导完成初始化。
 
+## Docker Compose
+
+仓库根目录提供两个 Compose 模板，分别对应 SQLite 和 PostgreSQL。选择一个复制成 `docker-compose.yml` 后再启动；仓库不直接提供默认 `docker-compose.yml`，避免替你选择存储方案。
+
+SQLite：
+
+```bash
+cp docker-compose.sqlite.yml docker-compose.yml
+docker compose up -d
+```
+
+SQLite 模板会监听 `8080`，并把应用数据持久化到 `./data/app`。可以通过环境变量调整端口、镜像和日志级别：
+
+```bash
+PROXYGATEWAY_PORT=28080 \
+PROXYGATEWAY_IMAGE=ghcr.io/redshamea/proxy-gateway:v0.2.0 \
+PROXYGATEWAY_LOG_LEVEL=debug \
+docker compose up -d
+```
+
+使用本地构建镜像：
+
+```bash
+docker build -t proxygateway:local .
+PROXYGATEWAY_IMAGE=proxygateway:local docker compose up -d
+```
+
+PostgreSQL：
+
+```bash
+cp docker-compose.postgres.yml docker-compose.yml
+docker compose up -d
+```
+
+PostgreSQL 模板会启动 `proxygateway` 和 `postgres:latest`。PostgreSQL 数据写入 `./data/postgres`，Proxy Gateway 的 `/data` 仍挂载到 `./data/app`。默认 DSN 为 `postgres://proxygateway:proxygateway@postgres:5432/proxygateway?sslmode=disable`，可通过 `PROXYGATEWAY_DB_DSN`、`POSTGRES_PASSWORD`、`POSTGRES_DB` 等环境变量覆盖。
+
+停止服务：
+
+```bash
+docker compose down
+```
+
 ## 使用方式
 
 1. 在 Web 控制台中导入或创建节点。

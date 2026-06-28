@@ -24,6 +24,48 @@ docker run -d \
 
 Open `http://localhost:8080`. On first startup, if no admin password exists yet, the service will guide you through initialization.
 
+## Docker Compose
+
+The repository root includes two Compose templates, one for SQLite and one for PostgreSQL. Pick one, copy it to `docker-compose.yml`, and then start it. The repository intentionally does not ship a default `docker-compose.yml`, so it does not choose a storage backend for you.
+
+SQLite:
+
+```bash
+cp docker-compose.sqlite.yml docker-compose.yml
+docker compose up -d
+```
+
+The SQLite template listens on `8080` and persists app data under `./data/app`. You can override the port, image, and log level with environment variables:
+
+```bash
+PROXYGATEWAY_PORT=28080 \
+PROXYGATEWAY_IMAGE=ghcr.io/redshamea/proxy-gateway:v0.2.0 \
+PROXYGATEWAY_LOG_LEVEL=debug \
+docker compose up -d
+```
+
+Use a locally built image:
+
+```bash
+docker build -t proxygateway:local .
+PROXYGATEWAY_IMAGE=proxygateway:local docker compose up -d
+```
+
+PostgreSQL:
+
+```bash
+cp docker-compose.postgres.yml docker-compose.yml
+docker compose up -d
+```
+
+The PostgreSQL template starts `proxygateway` and `postgres:latest`. PostgreSQL data is stored under `./data/postgres`, while Proxy Gateway still mounts `/data` from `./data/app`. The default DSN is `postgres://proxygateway:proxygateway@postgres:5432/proxygateway?sslmode=disable`; override it with environment variables such as `PROXYGATEWAY_DB_DSN`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`.
+
+Stop the stack with:
+
+```bash
+docker compose down
+```
+
 ## Usage
 
 1. Import or create nodes in the web console.
