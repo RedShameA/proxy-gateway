@@ -1,67 +1,69 @@
 package app
 
 import (
+	"bufio"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	probinginfra "proxygateway/internal/infrastructure/probing"
 	proxyiface "proxygateway/internal/interfaces/proxy"
+	"sync"
 	"testing"
 	"time"
 )
 
 func TestObserveNodeAppliesProbeDeadlineAfterDial(t *testing.T) {
-	probe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(2 * time.Second)
-		_, _ = w.Write([]byte("ip=203.0.113.10\nloc=US\n"))
-	}))
-	t.Cleanup(probe.Close)
-
+	engine := newDeadlineRecordingEngine("ip=203.0.113.10\nloc=US\n")
 	g := NewForTest(t)
-	start := time.Now()
+	g.protocolEngine = engine
 	ok, err := g.observeNode(nodeRecord{
 		ID:      "node_timeout",
 		Name:    "timeout direct",
 		Type:    "direct",
 		Enabled: true,
-	}, probe.URL, evaluationSettings{
+	}, "http://probe.example/generate_204", evaluationSettings{
 		ConnectTimeoutSeconds: 1,
 		ProbeTimeoutSeconds:   1,
 	})
-	elapsed := time.Since(start)
-	if ok {
-		t.Fatal("observeNode unexpectedly succeeded")
+	if !ok || err != nil {
+		t.Fatalf("observeNode = %v, %v; want success", ok, err)
 	}
-	if err == nil {
-		t.Fatal("observeNode error is nil")
+	dialDeadline, connDeadline := engine.nodeDeadlines()
+	if dialDeadline.IsZero() {
+		t.Fatal("DialNode timeout deadline is zero")
 	}
-	if elapsed >= 1800*time.Millisecond {
-		t.Fatalf("observeNode elapsed = %s, want probe deadline near 1s", elapsed)
+	if connDeadline.IsZero() {
+		t.Fatal("connection deadline was not set after DialNode")
+	}
+	if !connDeadline.Equal(dialDeadline) {
+		t.Fatalf("connection deadline = %v, want dial timeout deadline %v", connDeadline, dialDeadline)
 	}
 }
 
 func TestFetchTestURLThroughChainAppliesProbeDeadlineAfterDial(t *testing.T) {
-	probe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(2 * time.Second)
-		_, _ = w.Write([]byte("ok"))
-	}))
-	t.Cleanup(probe.Close)
-
+	engine := newDeadlineRecordingEngine("ok")
 	g := NewForTest(t)
-	g.protocolEngine = directTestEngine{}
-	start := time.Now()
+	g.protocolEngine = engine
 	_, _, err := g.fetchTestURLThroughChain(
 		nodeRecord{ID: "front", Name: "front", Type: "direct", Enabled: true},
 		nodeRecord{ID: "exit", Name: "exit", Type: "direct", Enabled: true},
-		probe.URL,
+		"http://probe.example/generate_204",
 		evaluationSettings{ConnectTimeoutSeconds: 1, ProbeTimeoutSeconds: 1},
 	)
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatal("fetchTestURLThroughChain error is nil")
+	if err != nil {
+		t.Fatalf("fetchTestURLThroughChain error = %v, want nil", err)
 	}
-	if elapsed >= 1800*time.Millisecond {
-		t.Fatalf("fetchTestURLThroughChain elapsed = %s, want probe deadline near 1s", elapsed)
+	dialDeadline, connDeadline := engine.chainDeadlines()
+	if dialDeadline.IsZero() {
+		t.Fatal("DialChain timeout deadline is zero")
+	}
+	if connDeadline.IsZero() {
+		t.Fatal("connection deadline was not set after DialChain")
+	}
+	if !connDeadline.Equal(dialDeadline) {
+		t.Fatalf("connection deadline = %v, want dial timeout deadline %v", connDeadline, dialDeadline)
 	}
 }
 
@@ -96,4 +98,86 @@ func dialTestTarget(target string, timeouts dialTimeouts) (net.Conn, error) {
 		timeout = time.Second
 	}
 	return net.DialTimeout("tcp", target, timeout)
+}
+
+type deadlineRecordingEngine struct {
+	mu                 sync.Mutex
+	responseBody       string
+	nodeDialDeadline   time.Time
+	nodeConnDeadlines  []time.Time
+	chainDialDeadline  time.Time
+	chainConnDeadlines []time.Time
+}
+
+func newDeadlineRecordingEngine(responseBody string) *deadlineRecordingEngine {
+	return &deadlineRecordingEngine{responseBody: responseBody}
+}
+
+func (e *deadlineRecordingEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+	e.mu.Lock()
+	e.nodeDialDeadline = timeouts.Deadline
+	e.mu.Unlock()
+	return e.newConn(func(deadline time.Time) {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.nodeConnDeadlines = append(e.nodeConnDeadlines, deadline)
+	}), nil
+}
+
+func (e *deadlineRecordingEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+	e.mu.Lock()
+	e.chainDialDeadline = timeouts.Deadline
+	e.mu.Unlock()
+	return e.newConn(func(deadline time.Time) {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.chainConnDeadlines = append(e.chainConnDeadlines, deadline)
+	}), nil
+}
+
+func (e *deadlineRecordingEngine) nodeDeadlines() (time.Time, time.Time) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.nodeDialDeadline, firstNonZeroDeadline(e.nodeConnDeadlines)
+}
+
+func (e *deadlineRecordingEngine) chainDeadlines() (time.Time, time.Time) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.chainDialDeadline, firstNonZeroDeadline(e.chainConnDeadlines)
+}
+
+func (e *deadlineRecordingEngine) newConn(recordDeadline func(time.Time)) net.Conn {
+	clientConn, serverConn := net.Pipe()
+	go serveProbeResponse(serverConn, e.responseBody)
+	return deadlineRecordingConn{Conn: clientConn, recordDeadline: recordDeadline}
+}
+
+type deadlineRecordingConn struct {
+	net.Conn
+	recordDeadline func(time.Time)
+}
+
+func (c deadlineRecordingConn) SetDeadline(deadline time.Time) error {
+	c.recordDeadline(deadline)
+	return c.Conn.SetDeadline(deadline)
+}
+
+func firstNonZeroDeadline(deadlines []time.Time) time.Time {
+	for _, deadline := range deadlines {
+		if !deadline.IsZero() {
+			return deadline
+		}
+	}
+	return time.Time{}
+}
+
+func serveProbeResponse(conn net.Conn, body string) {
+	defer conn.Close()
+	req, err := http.ReadRequest(bufio.NewReader(conn))
+	if err == nil && req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+		_ = req.Body.Close()
+	}
+	_, _ = fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(body), body)
 }
