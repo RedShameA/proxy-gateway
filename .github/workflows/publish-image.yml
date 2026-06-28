@@ -12,6 +12,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      GOPROXY: https://proxy.golang.org,direct
 
     services:
       postgres:
@@ -93,6 +95,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Download Go modules
+        run: |
+          for attempt in 1 2 3; do
+            if go mod download; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          go mod download
 
       - name: Set up Node
         uses: actions/setup-node@v4
