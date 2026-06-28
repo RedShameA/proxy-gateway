@@ -12,9 +12,11 @@ func (g *Gateway) nodeEngine() nodeProtocolEngine {
 func (g *Gateway) dialProxyPath(path selectedProxyPath, target string) (net.Conn, error) {
 	timeouts := g.proxyDialTimeouts()
 	if path.FrontNode.ID != "" && path.ExitNode.ID != "" {
-		return g.nodeEngine().DialChain(path.FrontNode, path.ExitNode, target, timeouts)
+		result, err := g.nodeEngine().DialChain(path.FrontNode, path.ExitNode, target, timeouts)
+		return result.Conn, err
 	}
-	return g.nodeEngine().DialNode(path.Node, target, timeouts)
+	result, err := g.nodeEngine().DialNode(path.Node, target, timeouts)
+	return result.Conn, err
 }
 
 func (g *Gateway) proxyDialTimeouts() dialTimeouts {
@@ -29,9 +31,11 @@ func (g *Gateway) proxyDialTimeouts() dialTimeouts {
 }
 
 func (g *Gateway) dialViaChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
-	return g.nodeEngine().DialChain(frontNode, exitNode, target, timeouts)
+	result, err := g.nodeEngine().DialChain(frontNode, exitNode, target, timeouts)
+	return result.Conn, err
 }
 
 func (g *Gateway) dialViaNode(node nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
-	return g.nodeEngine().DialNode(node, target, timeouts)
+	result, err := g.nodeEngine().DialNode(node, target, timeouts)
+	return result.Conn, err
 }

@@ -66,6 +66,8 @@ type geoIPCountryService interface {
 }
 
 type dialTimeouts = appproxy.DialTimeouts
+type dialResult = appproxy.DialResult
+type dialMetrics = appproxy.DialMetrics
 type nodeRecord = appproxy.Node
 type proxyCredentialRecord = appproxy.CredentialRecord
 type selectedProxyPath = appproxy.SelectedPath

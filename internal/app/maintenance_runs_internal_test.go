@@ -793,7 +793,7 @@ type deletingHTTP200Engine struct {
 	deleteNodeID string
 }
 
-func (e deletingHTTP200Engine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+func (e deletingHTTP200Engine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
 	client, server := net.Pipe()
 	go func() {
 		defer server.Close()
@@ -803,30 +803,38 @@ func (e deletingHTTP200Engine) DialNode(node nodeRecord, target string, timeouts
 		}
 		_, _ = server.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"))
 	}()
-	return client, nil
+	return dialResult{Conn: client}, nil
 }
 
-func (e deletingHTTP200Engine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+func (e deletingHTTP200Engine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
 	return e.DialNode(frontNode, target, timeouts)
 }
 
 type mixedProfileEvaluationEngine struct {
 	failingNodeID string
+	failureDelay  time.Duration
+	responseDelay time.Duration
 }
 
-func (e mixedProfileEvaluationEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+func (e mixedProfileEvaluationEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
 	if node.ID == e.failingNodeID {
-		return nil, errors.New("candidate dial failed")
+		if e.failureDelay > 0 {
+			time.Sleep(e.failureDelay)
+		}
+		return dialResult{}, errors.New("candidate dial failed")
 	}
 	client, server := net.Pipe()
 	go func() {
 		defer server.Close()
 		_, _ = http.ReadRequest(bufio.NewReader(server))
+		if e.responseDelay > 0 {
+			time.Sleep(e.responseDelay)
+		}
 		_, _ = server.Write([]byte("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"))
 	}()
-	return client, nil
+	return dialResult{Conn: client}, nil
 }
 
-func (e mixedProfileEvaluationEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+func (e mixedProfileEvaluationEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
 	return e.DialNode(frontNode, target, timeouts)
 }

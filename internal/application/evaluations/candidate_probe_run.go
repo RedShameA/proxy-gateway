@@ -4,7 +4,22 @@ type CandidateProbeResult[T any] struct {
 	Candidate  T
 	DurationMS int64
 	HTTPStatus int
+	Timings    ProbeTimings
 	Err        error
+}
+
+type CandidateProbeMeasurement struct {
+	DurationMS int64
+	HTTPStatus int
+	Timings    ProbeTimings
+}
+
+type ProbeTimings struct {
+	DialDurationMS int64
+	HTTPDurationMS int64
+	CacheWaitMS    int64
+	CacheBuildMS   int64
+	OutboundDialMS int64
 }
 
 func (r CandidateProbeResult[T]) OK() bool {
@@ -28,13 +43,19 @@ type ChainCandidateProbeRun[T any] struct {
 	Summary ChainProbeSummary
 }
 
-func ExecuteFastestCandidateProbes[T any](candidates []T, concurrency int, currentNodeID string, nodeID func(T) string, probe func(T) (int64, int, error)) FastestCandidateProbeRun[T] {
+func ExecuteFastestCandidateProbes[T any](candidates []T, concurrency int, currentNodeID string, nodeID func(T) string, probe func(T) (CandidateProbeMeasurement, error)) FastestCandidateProbeRun[T] {
 	results := RunConcurrentProbes(
 		candidates,
 		concurrency,
 		func(candidate T) CandidateProbeResult[T] {
-			duration, status, err := probe(candidate)
-			return CandidateProbeResult[T]{Candidate: candidate, DurationMS: duration, HTTPStatus: status, Err: err}
+			measurement, err := probe(candidate)
+			return CandidateProbeResult[T]{
+				Candidate:  candidate,
+				DurationMS: measurement.DurationMS,
+				HTTPStatus: measurement.HTTPStatus,
+				Timings:    measurement.Timings,
+				Err:        err,
+			}
 		},
 	)
 	probeResults := make([]FastestProbeResult, 0, len(results))
@@ -52,13 +73,19 @@ func ExecuteFastestCandidateProbes[T any](candidates []T, concurrency int, curre
 	}
 }
 
-func ExecuteChainCandidateProbes[T any](candidates []T, concurrency int, currentNodeID, currentExitNodeID string, frontNodeID func(T) string, exitNodeID func(T) string, probe func(T) (int64, int, error)) ChainCandidateProbeRun[T] {
+func ExecuteChainCandidateProbes[T any](candidates []T, concurrency int, currentNodeID, currentExitNodeID string, frontNodeID func(T) string, exitNodeID func(T) string, probe func(T) (CandidateProbeMeasurement, error)) ChainCandidateProbeRun[T] {
 	results := RunConcurrentProbes(
 		candidates,
 		concurrency,
 		func(candidate T) CandidateProbeResult[T] {
-			duration, status, err := probe(candidate)
-			return CandidateProbeResult[T]{Candidate: candidate, DurationMS: duration, HTTPStatus: status, Err: err}
+			measurement, err := probe(candidate)
+			return CandidateProbeResult[T]{
+				Candidate:  candidate,
+				DurationMS: measurement.DurationMS,
+				HTTPStatus: measurement.HTTPStatus,
+				Timings:    measurement.Timings,
+				Err:        err,
+			}
 		},
 	)
 	probeResults := make([]ChainProbeResult, 0, len(results))

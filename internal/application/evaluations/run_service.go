@@ -26,6 +26,7 @@ type ChainCandidateProbeLog struct {
 	Pair       ChainCandidatePair
 	DurationMS int64
 	HTTPStatus int
+	Timings    ProbeTimings
 	Err        error
 }
 
@@ -54,9 +55,9 @@ type StatePort interface {
 }
 
 type ProbePort interface {
-	FetchNode(context.Context, appproxy.Node, string) (int64, int, error)
-	ProbeChainLink(context.Context, appproxy.Node, appproxy.Node) (int64, error)
-	FetchChain(context.Context, appproxy.Node, appproxy.Node, string) (int64, int, error)
+	FetchNode(context.Context, appproxy.Node, string) (CandidateProbeMeasurement, error)
+	ProbeChainLink(context.Context, appproxy.Node, appproxy.Node) (CandidateProbeMeasurement, error)
+	FetchChain(context.Context, appproxy.Node, appproxy.Node, string) (CandidateProbeMeasurement, error)
 }
 
 type RunObserver interface {
@@ -115,7 +116,7 @@ func (s RunService) EvaluateFastest(ctx context.Context, target Target, settings
 		settings.GlobalConcurrency,
 		currentNodeID,
 		func(node appproxy.Node) string { return node.ID },
-		func(node appproxy.Node) (int64, int, error) {
+		func(node appproxy.Node) (CandidateProbeMeasurement, error) {
 			return s.fetchNode(ctx, node, target.TestURL)
 		},
 	)
@@ -216,9 +217,8 @@ func (s RunService) EvaluateFastestFront(ctx context.Context, target Target, set
 		currentExitNodeID,
 		func(node appproxy.Node) string { return node.ID },
 		func(appproxy.Node) string { return exitNode.ID },
-		func(node appproxy.Node) (int64, int, error) {
-			duration, err := s.probeChainLink(ctx, node, exitNode)
-			return duration, 0, err
+		func(node appproxy.Node) (CandidateProbeMeasurement, error) {
+			return s.probeChainLink(ctx, node, exitNode)
 		},
 	)
 	for _, result := range probeRun.Results {
@@ -226,6 +226,7 @@ func (s RunService) EvaluateFastestFront(ctx context.Context, target Target, set
 			Pair:       ChainCandidatePair{FrontNode: result.Candidate, ExitNode: exitNode},
 			DurationMS: result.DurationMS,
 			HTTPStatus: result.HTTPStatus,
+			Timings:    result.Timings,
 			Err:        result.Err,
 		})
 	}
@@ -283,7 +284,7 @@ func (s RunService) EvaluateEndToEndChain(ctx context.Context, target Target, se
 		currentExitNodeID,
 		func(pair ChainCandidatePair) string { return pair.FrontNode.ID },
 		func(pair ChainCandidatePair) string { return pair.ExitNode.ID },
-		func(pair ChainCandidatePair) (int64, int, error) {
+		func(pair ChainCandidatePair) (CandidateProbeMeasurement, error) {
 			return s.fetchChain(ctx, pair.FrontNode, pair.ExitNode, target.TestURL)
 		},
 	)
@@ -292,6 +293,7 @@ func (s RunService) EvaluateEndToEndChain(ctx context.Context, target Target, se
 			Pair:       result.Candidate,
 			DurationMS: result.DurationMS,
 			HTTPStatus: result.HTTPStatus,
+			Timings:    result.Timings,
 			Err:        result.Err,
 		})
 	}
@@ -431,23 +433,23 @@ func (s RunService) retainedChainLinkExitPathExists(ctx context.Context, target 
 	return s.deps.Paths != nil && s.deps.Paths.RetainedChainLinkExitPathExists(ctx, target, exitNodeID)
 }
 
-func (s RunService) fetchNode(ctx context.Context, node appproxy.Node, testURL string) (int64, int, error) {
+func (s RunService) fetchNode(ctx context.Context, node appproxy.Node, testURL string) (CandidateProbeMeasurement, error) {
 	if s.deps.Probes == nil {
-		return 0, 0, errors.New("probe port is not configured")
+		return CandidateProbeMeasurement{}, errors.New("probe port is not configured")
 	}
 	return s.deps.Probes.FetchNode(ctx, node, testURL)
 }
 
-func (s RunService) probeChainLink(ctx context.Context, frontNode, exitNode appproxy.Node) (int64, error) {
+func (s RunService) probeChainLink(ctx context.Context, frontNode, exitNode appproxy.Node) (CandidateProbeMeasurement, error) {
 	if s.deps.Probes == nil {
-		return 0, errors.New("probe port is not configured")
+		return CandidateProbeMeasurement{}, errors.New("probe port is not configured")
 	}
 	return s.deps.Probes.ProbeChainLink(ctx, frontNode, exitNode)
 }
 
-func (s RunService) fetchChain(ctx context.Context, frontNode, exitNode appproxy.Node, testURL string) (int64, int, error) {
+func (s RunService) fetchChain(ctx context.Context, frontNode, exitNode appproxy.Node, testURL string) (CandidateProbeMeasurement, error) {
 	if s.deps.Probes == nil {
-		return 0, 0, errors.New("probe port is not configured")
+		return CandidateProbeMeasurement{}, errors.New("probe port is not configured")
 	}
 	return s.deps.Probes.FetchChain(ctx, frontNode, exitNode, testURL)
 }

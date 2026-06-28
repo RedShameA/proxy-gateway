@@ -23,9 +23,20 @@ type DialTimeouts struct {
 	Deadline       time.Time
 }
 
+type DialMetrics struct {
+	CacheWaitMS    int64
+	CacheBuildMS   int64
+	OutboundDialMS int64
+}
+
+type DialResult struct {
+	Conn    net.Conn
+	Metrics DialMetrics
+}
+
 type NodeProtocolEngine interface {
-	DialNode(node Node, target string, timeouts DialTimeouts) (net.Conn, error)
-	DialChain(frontNode, exitNode Node, target string, timeouts DialTimeouts) (net.Conn, error)
+	DialNode(node Node, target string, timeouts DialTimeouts) (DialResult, error)
+	DialChain(frontNode, exitNode Node, target string, timeouts DialTimeouts) (DialResult, error)
 }
 
 type CloseableNodeProtocolEngine interface {

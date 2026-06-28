@@ -1,6 +1,10 @@
 package app
 
-import "context"
+import (
+	"context"
+
+	appevaluations "proxygateway/internal/application/evaluations"
+)
 
 const defaultChainLinkProbeURL = defaultProfileTestURL
 
@@ -13,6 +17,7 @@ type chainCandidateProbeResult struct {
 	Pair     chainCandidatePair
 	Duration int64
 	Status   int
+	Timings  appevaluations.ProbeTimings
 	Err      error
 }
 
@@ -31,20 +36,18 @@ func (g *Gateway) evaluateFastestFrontProfile(target profileEvaluationTarget, se
 	return g.evaluationRunService(settings).EvaluateFastestFront(context.Background(), target, evaluationRuntimeSettings(settings))
 }
 
-func (g *Gateway) probeChainLink(frontNode, exitNode nodeRecord, settings evaluationSettings) (int64, error) {
-	return g.probeClient().ProbeChainLink(frontNode, exitNode, defaultChainLinkProbeURL, settings.probeDialTimeouts())
+func (g *Gateway) probeChainLink(frontNode, exitNode nodeRecord, settings evaluationSettings) (appevaluations.CandidateProbeMeasurement, error) {
+	result, err := g.probeClient().ProbeChainLink(frontNode, exitNode, defaultChainLinkProbeURL, settings.probeDialTimeouts())
+	return candidateProbeMeasurementFromDialResult(result), err
 }
 
 func (g *Gateway) evaluateEndToEndChainProfile(target profileEvaluationTarget, settings evaluationSettings) bool {
 	return g.evaluationRunService(settings).EvaluateEndToEndChain(context.Background(), target, evaluationRuntimeSettings(settings))
 }
 
-func (g *Gateway) fetchTestURLThroughChain(frontNode, exitNode nodeRecord, testURL string, settings evaluationSettings) (int64, int, error) {
+func (g *Gateway) fetchTestURLThroughChain(frontNode, exitNode nodeRecord, testURL string, settings evaluationSettings) (appevaluations.CandidateProbeMeasurement, error) {
 	result, err := g.probeClient().FetchThroughChain(frontNode, exitNode, testURL, settings.probeDialTimeouts())
-	if err != nil {
-		return 0, 0, err
-	}
-	return result.DurationMS, result.HTTPStatus, nil
+	return candidateProbeMeasurementFromHTTPResult(result), err
 }
 
 func excludeNodes(nodes []nodeRecord, nodeIDs []string) []nodeRecord {

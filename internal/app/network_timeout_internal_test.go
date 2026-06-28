@@ -46,7 +46,7 @@ func TestFetchTestURLThroughChainAppliesProbeDeadlineAfterDial(t *testing.T) {
 	engine := newDeadlineRecordingEngine("ok")
 	g := NewForTest(t)
 	g.protocolEngine = engine
-	_, _, err := g.fetchTestURLThroughChain(
+	_, err := g.fetchTestURLThroughChain(
 		nodeRecord{ID: "front", Name: "front", Type: "direct", Enabled: true},
 		nodeRecord{ID: "exit", Name: "exit", Type: "direct", Enabled: true},
 		"http://probe.example/generate_204",
@@ -84,12 +84,20 @@ func TestProxyTargetHelpersAddDefaultPortForIPv6(t *testing.T) {
 
 type directTestEngine struct{}
 
-func (directTestEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
-	return dialTestTarget(target, timeouts)
+func (directTestEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
+	conn, err := dialTestTarget(target, timeouts)
+	if err != nil {
+		return dialResult{}, err
+	}
+	return dialResult{Conn: conn}, nil
 }
 
-func (directTestEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
-	return dialTestTarget(target, timeouts)
+func (directTestEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
+	conn, err := dialTestTarget(target, timeouts)
+	if err != nil {
+		return dialResult{}, err
+	}
+	return dialResult{Conn: conn}, nil
 }
 
 func dialTestTarget(target string, timeouts dialTimeouts) (net.Conn, error) {
@@ -113,26 +121,26 @@ func newDeadlineRecordingEngine(responseBody string) *deadlineRecordingEngine {
 	return &deadlineRecordingEngine{responseBody: responseBody}
 }
 
-func (e *deadlineRecordingEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+func (e *deadlineRecordingEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
 	e.mu.Lock()
 	e.nodeDialDeadline = timeouts.Deadline
 	e.mu.Unlock()
-	return e.newConn(func(deadline time.Time) {
+	return dialResult{Conn: e.newConn(func(deadline time.Time) {
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		e.nodeConnDeadlines = append(e.nodeConnDeadlines, deadline)
-	}), nil
+	})}, nil
 }
 
-func (e *deadlineRecordingEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+func (e *deadlineRecordingEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
 	e.mu.Lock()
 	e.chainDialDeadline = timeouts.Deadline
 	e.mu.Unlock()
-	return e.newConn(func(deadline time.Time) {
+	return dialResult{Conn: e.newConn(func(deadline time.Time) {
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		e.chainConnDeadlines = append(e.chainConnDeadlines, deadline)
-	}), nil
+	})}, nil
 }
 
 func (e *deadlineRecordingEngine) nodeDeadlines() (time.Time, time.Time) {

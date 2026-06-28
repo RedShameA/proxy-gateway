@@ -371,9 +371,9 @@ type postgresEvaluationTestEngine struct {
 	delays        map[string]time.Duration
 }
 
-func (e postgresEvaluationTestEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+func (e postgresEvaluationTestEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
 	if node.ID == e.failingNodeID {
-		return nil, errors.New("candidate dial failed")
+		return dialResult{}, errors.New("candidate dial failed")
 	}
 	if delay := e.delays[node.ID]; delay > 0 {
 		time.Sleep(delay)
@@ -384,9 +384,9 @@ func (e postgresEvaluationTestEngine) DialNode(node nodeRecord, target string, t
 		_, _ = http.ReadRequest(bufio.NewReader(server))
 		_, _ = server.Write([]byte("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"))
 	}()
-	return client, nil
+	return dialResult{Conn: client}, nil
 }
 
-func (e postgresEvaluationTestEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+func (e postgresEvaluationTestEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
 	return e.DialNode(frontNode, target, timeouts)
 }

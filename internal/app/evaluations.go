@@ -148,6 +148,7 @@ type profileCandidateProbeResult struct {
 	Node     nodeRecord
 	Duration int64
 	Status   int
+	Timings  appevaluations.ProbeTimings
 	Err      error
 }
 
@@ -296,14 +297,37 @@ func internalNodeSourceMode(mode string) string {
 	return normalizeNodeSourceMode(mode, nil, false)
 }
 
-func (g *Gateway) fetchTestURLThroughNode(node nodeRecord, testURL string, settings evaluationSettings) (int64, int, error) {
+func (g *Gateway) fetchTestURLThroughNode(node nodeRecord, testURL string, settings evaluationSettings) (appevaluations.CandidateProbeMeasurement, error) {
 	result, err := g.probeClient().FetchThroughNode(node, testURL, settings.probeDialTimeouts())
-	if err != nil {
-		return 0, 0, err
-	}
-	return result.DurationMS, result.HTTPStatus, nil
+	return candidateProbeMeasurementFromHTTPResult(result), err
 }
 
 func (g *Gateway) probeClient() probinginfra.Client {
 	return probinginfra.Client{Engine: g.nodeEngine()}
+}
+
+func candidateProbeMeasurementFromHTTPResult(result probinginfra.HTTPResult) appevaluations.CandidateProbeMeasurement {
+	return appevaluations.CandidateProbeMeasurement{
+		DurationMS: result.DurationMS,
+		HTTPStatus: result.HTTPStatus,
+		Timings: appevaluations.ProbeTimings{
+			DialDurationMS: result.DialDurationMS,
+			HTTPDurationMS: result.HTTPDurationMS,
+			CacheWaitMS:    result.DialMetrics.CacheWaitMS,
+			CacheBuildMS:   result.DialMetrics.CacheBuildMS,
+			OutboundDialMS: result.DialMetrics.OutboundDialMS,
+		},
+	}
+}
+
+func candidateProbeMeasurementFromDialResult(result probinginfra.DialProbeResult) appevaluations.CandidateProbeMeasurement {
+	return appevaluations.CandidateProbeMeasurement{
+		DurationMS: result.DurationMS,
+		Timings: appevaluations.ProbeTimings{
+			DialDurationMS: result.DialDurationMS,
+			CacheWaitMS:    result.DialMetrics.CacheWaitMS,
+			CacheBuildMS:   result.DialMetrics.CacheBuildMS,
+			OutboundDialMS: result.DialMetrics.OutboundDialMS,
+		},
+	}
 }

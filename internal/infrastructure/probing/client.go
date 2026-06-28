@@ -27,9 +27,18 @@ type OutboundGETRequest struct {
 }
 
 type HTTPResult struct {
-	DurationMS int64
-	HTTPStatus int
-	Body       []byte
+	DurationMS     int64
+	DialDurationMS int64
+	HTTPDurationMS int64
+	HTTPStatus     int
+	Body           []byte
+	DialMetrics    appproxy.DialMetrics
+}
+
+type DialProbeResult struct {
+	DurationMS     int64
+	DialDurationMS int64
+	DialMetrics    appproxy.DialMetrics
 }
 
 type Client struct {
@@ -45,14 +54,16 @@ func (c Client) FetchThroughNode(node appproxy.Node, rawURL string, timeouts app
 		return HTTPResult{}, errors.New("node protocol engine is nil")
 	}
 	start := time.Now()
-	conn, err := c.Engine.DialNode(node, outbound.TargetHost, timeouts)
+	dialStart := time.Now()
+	dialResult, err := c.Engine.DialNode(node, outbound.TargetHost, timeouts)
+	dialDuration := elapsedMillis(dialStart)
 	if err != nil {
-		return HTTPResult{}, err
+		return httpResultWithElapsed(start, dialDuration, dialResult.Metrics), err
 	}
-	if isNilConn(conn) {
-		return HTTPResult{}, errNilDialConn
+	if isNilConn(dialResult.Conn) {
+		return httpResultWithElapsed(start, dialDuration, dialResult.Metrics), errNilDialConn
 	}
-	return fetchWithConn(conn, outbound, timeouts, start)
+	return fetchWithConn(dialResult.Conn, outbound, timeouts, start, dialDuration, dialResult.Metrics)
 }
 
 func (c Client) FetchThroughChain(frontNode, exitNode appproxy.Node, rawURL string, timeouts appproxy.DialTimeouts) (HTTPResult, error) {
@@ -64,69 +75,112 @@ func (c Client) FetchThroughChain(frontNode, exitNode appproxy.Node, rawURL stri
 		return HTTPResult{}, errors.New("node protocol engine is nil")
 	}
 	start := time.Now()
-	conn, err := c.Engine.DialChain(frontNode, exitNode, outbound.TargetHost, timeouts)
+	dialStart := time.Now()
+	dialResult, err := c.Engine.DialChain(frontNode, exitNode, outbound.TargetHost, timeouts)
+	dialDuration := elapsedMillis(dialStart)
 	if err != nil {
-		return HTTPResult{}, err
+		return httpResultWithElapsed(start, dialDuration, dialResult.Metrics), err
 	}
-	if isNilConn(conn) {
-		return HTTPResult{}, errNilDialConn
+	if isNilConn(dialResult.Conn) {
+		return httpResultWithElapsed(start, dialDuration, dialResult.Metrics), errNilDialConn
 	}
-	return fetchWithConn(conn, outbound, timeouts, start)
+	return fetchWithConn(dialResult.Conn, outbound, timeouts, start, dialDuration, dialResult.Metrics)
 }
 
-func (c Client) ProbeChainLink(frontNode, exitNode appproxy.Node, rawURL string, timeouts appproxy.DialTimeouts) (int64, error) {
+func (c Client) ProbeChainLink(frontNode, exitNode appproxy.Node, rawURL string, timeouts appproxy.DialTimeouts) (DialProbeResult, error) {
 	outbound, err := BuildOutboundGETRequest(rawURL)
 	if err != nil {
-		return 0, err
+		return DialProbeResult{}, err
 	}
 	if c.Engine == nil {
-		return 0, errors.New("node protocol engine is nil")
+		return DialProbeResult{}, errors.New("node protocol engine is nil")
 	}
 	start := time.Now()
-	conn, err := c.Engine.DialChain(frontNode, exitNode, outbound.TargetHost, timeouts)
+	dialStart := time.Now()
+	dialResult, err := c.Engine.DialChain(frontNode, exitNode, outbound.TargetHost, timeouts)
+	dialDuration := elapsedMillis(dialStart)
+	result := DialProbeResult{
+		DurationMS:     elapsedMillis(start),
+		DialDurationMS: dialDuration,
+		DialMetrics:    dialResult.Metrics,
+	}
 	if err != nil {
-		return 0, err
+		result.DurationMS = elapsedMillis(start)
+		return result, err
 	}
-	if isNilConn(conn) {
-		return 0, errNilDialConn
+	if isNilConn(dialResult.Conn) {
+		result.DurationMS = elapsedMillis(start)
+		return result, errNilDialConn
 	}
-	_ = conn.Close()
-	return time.Since(start).Milliseconds(), nil
+	_ = dialResult.Conn.Close()
+	result.DurationMS = elapsedMillis(start)
+	return result, nil
 }
 
-func fetchWithConn(conn net.Conn, outbound OutboundGETRequest, timeouts appproxy.DialTimeouts, start time.Time) (HTTPResult, error) {
+func fetchWithConn(conn net.Conn, outbound OutboundGETRequest, timeouts appproxy.DialTimeouts, start time.Time, dialDuration int64, dialMetrics appproxy.DialMetrics) (HTTPResult, error) {
 	if isNilConn(conn) {
 		return HTTPResult{}, errNilDialConn
 	}
 	defer conn.Close()
+	httpStart := time.Now()
 	if !timeouts.Deadline.IsZero() {
 		_ = conn.SetDeadline(timeouts.Deadline)
 		defer func(conn net.Conn) { _ = conn.SetDeadline(time.Time{}) }(conn)
 	}
 	conn, err := WrapOutboundGETConn(conn, outbound)
 	if err != nil {
-		return HTTPResult{}, err
+		return httpResultWithElapsedAndHTTP(start, dialDuration, dialMetrics, httpStart), err
 	}
 	if isNilConn(conn) {
-		return HTTPResult{}, errNilDialConn
+		return httpResultWithElapsedAndHTTP(start, dialDuration, dialMetrics, httpStart), errNilDialConn
 	}
 	if err := outbound.Request.Write(conn); err != nil {
-		return HTTPResult{}, err
+		return httpResultWithElapsedAndHTTP(start, dialDuration, dialMetrics, httpStart), err
 	}
 	resp, err := http.ReadResponse(bufio.NewReader(conn), outbound.Request)
 	if err != nil {
-		return HTTPResult{}, err
+		return httpResultWithElapsedAndHTTP(start, dialDuration, dialMetrics, httpStart), err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, responseBodyLimit))
 	if err != nil {
-		return HTTPResult{}, err
+		return HTTPResult{
+			DurationMS:     elapsedMillis(start),
+			DialDurationMS: dialDuration,
+			HTTPDurationMS: elapsedMillis(httpStart),
+			HTTPStatus:     resp.StatusCode,
+			DialMetrics:    dialMetrics,
+		}, err
 	}
 	return HTTPResult{
-		DurationMS: time.Since(start).Milliseconds(),
-		HTTPStatus: resp.StatusCode,
-		Body:       body,
+		DurationMS:     elapsedMillis(start),
+		DialDurationMS: dialDuration,
+		HTTPDurationMS: elapsedMillis(httpStart),
+		HTTPStatus:     resp.StatusCode,
+		Body:           body,
+		DialMetrics:    dialMetrics,
 	}, nil
+}
+
+func httpResultWithElapsed(start time.Time, dialDuration int64, dialMetrics appproxy.DialMetrics) HTTPResult {
+	return HTTPResult{
+		DurationMS:     elapsedMillis(start),
+		DialDurationMS: dialDuration,
+		DialMetrics:    dialMetrics,
+	}
+}
+
+func httpResultWithElapsedAndHTTP(start time.Time, dialDuration int64, dialMetrics appproxy.DialMetrics, httpStart time.Time) HTTPResult {
+	result := httpResultWithElapsed(start, dialDuration, dialMetrics)
+	result.HTTPDurationMS = elapsedMillis(httpStart)
+	return result
+}
+
+func elapsedMillis(start time.Time) int64 {
+	if start.IsZero() {
+		return 0
+	}
+	return time.Since(start).Milliseconds()
 }
 
 func isNilConn(conn net.Conn) bool {

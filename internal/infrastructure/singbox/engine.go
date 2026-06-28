@@ -44,19 +44,19 @@ func NewNodeProtocolEngine() (*singBoxNodeProtocolEngine, error) {
 	}, nil
 }
 
-func (e *singBoxNodeProtocolEngine) DialNode(node appproxy.Node, target string, timeouts appproxy.DialTimeouts) (net.Conn, error) {
+func (e *singBoxNodeProtocolEngine) DialNode(node appproxy.Node, target string, timeouts appproxy.DialTimeouts) (appproxy.DialResult, error) {
 	if !node.Enabled {
-		return nil, errors.New("node disabled")
+		return appproxy.DialResult{}, errors.New("node disabled")
 	}
 	targetAddr, err := socksaddrFromTarget(target)
 	if err != nil {
-		return nil, err
+		return appproxy.DialResult{}, err
 	}
 	outboundJSON, fingerprint, err := runtimeOutboundJSONForNode(node)
 	if err != nil {
-		return nil, err
+		return appproxy.DialResult{}, err
 	}
-	entry, err := e.cache.acquireSingle(fingerprint, func() (*singBoxCachedOutbound, error) {
+	entry, metrics, err := e.cache.acquireSingle(fingerprint, func() (*singBoxCachedOutbound, error) {
 		outbound, err := e.builder.buildSingle(outboundJSON, "node-"+shortRuntimeTag(fingerprint))
 		if err != nil {
 			return nil, err
@@ -66,35 +66,32 @@ func (e *singBoxNodeProtocolEngine) DialNode(node appproxy.Node, target string, 
 		}), nil
 	})
 	if err != nil {
-		return nil, err
+		return appproxy.DialResult{Metrics: metrics}, err
 	}
-	defer e.cache.release(entry)
-	ctx, cancel := dialContextForTimeouts(timeouts)
-	defer cancel()
-	return entry.outbound.DialContext(ctx, "tcp", targetAddr)
+	return e.dialCachedOutbound(entry, targetAddr, timeouts, metrics)
 }
 
-func (e *singBoxNodeProtocolEngine) DialChain(frontNode, exitNode appproxy.Node, target string, timeouts appproxy.DialTimeouts) (net.Conn, error) {
+func (e *singBoxNodeProtocolEngine) DialChain(frontNode, exitNode appproxy.Node, target string, timeouts appproxy.DialTimeouts) (appproxy.DialResult, error) {
 	if !frontNode.Enabled || !exitNode.Enabled {
-		return nil, errors.New("node disabled")
+		return appproxy.DialResult{}, errors.New("node disabled")
 	}
 	if appsubscriptions.NormalizeNodeType(exitNode.Type) == "direct" {
 		return e.DialNode(frontNode, target, timeouts)
 	}
 	targetAddr, err := socksaddrFromTarget(target)
 	if err != nil {
-		return nil, err
+		return appproxy.DialResult{}, err
 	}
 	frontJSON, frontFingerprint, err := runtimeOutboundJSONForNode(frontNode)
 	if err != nil {
-		return nil, err
+		return appproxy.DialResult{}, err
 	}
 	exitJSON, exitFingerprint, err := runtimeOutboundJSONForNode(exitNode)
 	if err != nil {
-		return nil, err
+		return appproxy.DialResult{}, err
 	}
 	chainKey := frontFingerprint + "->" + exitFingerprint
-	entry, err := e.cache.acquireChain(chainKey, func() (*singBoxCachedOutbound, error) {
+	entry, metrics, err := e.cache.acquireChain(chainKey, []string{frontFingerprint, exitFingerprint}, func() (*singBoxCachedOutbound, error) {
 		frontTag := "chain-front-" + shortRuntimeTag(frontFingerprint)
 		exitTag := "chain-exit-" + shortRuntimeTag(exitFingerprint)
 		graph, err := e.builder.buildChain(frontJSON, exitJSON, frontTag, exitTag)
@@ -104,12 +101,49 @@ func (e *singBoxNodeProtocolEngine) DialChain(frontNode, exitNode appproxy.Node,
 		return newSingBoxCachedOutbound(chainKey, []string{frontFingerprint, exitFingerprint}, graph.exitOutbound, graph.Close), nil
 	})
 	if err != nil {
-		return nil, err
+		return appproxy.DialResult{Metrics: metrics}, err
 	}
-	defer e.cache.release(entry)
+	return e.dialCachedOutbound(entry, targetAddr, timeouts, metrics)
+}
+
+type singBoxOutboundDialOutcome struct {
+	conn      net.Conn
+	err       error
+	elapsedMS int64
+}
+
+func (e *singBoxNodeProtocolEngine) dialCachedOutbound(entry *singBoxCachedOutbound, targetAddr M.Socksaddr, timeouts appproxy.DialTimeouts, metrics appproxy.DialMetrics) (appproxy.DialResult, error) {
 	ctx, cancel := dialContextForTimeouts(timeouts)
-	defer cancel()
-	return entry.outbound.DialContext(ctx, "tcp", targetAddr)
+	dialStart := time.Now()
+	done := make(chan singBoxOutboundDialOutcome, 1)
+	go func() {
+		conn, err := entry.outbound.DialContext(ctx, "tcp", targetAddr)
+		done <- singBoxOutboundDialOutcome{
+			conn:      conn,
+			err:       err,
+			elapsedMS: durationMillis(dialStart),
+		}
+	}()
+
+	select {
+	case outcome := <-done:
+		cancel()
+		e.cache.release(entry)
+		metrics.OutboundDialMS = outcome.elapsedMS
+		return appproxy.DialResult{Conn: outcome.conn, Metrics: metrics}, outcome.err
+	case <-ctx.Done():
+		timeoutErr := fmt.Errorf("sing-box outbound dial timeout: %w", ctx.Err())
+		cancel()
+		metrics.OutboundDialMS = durationMillis(dialStart)
+		go func() {
+			outcome := <-done
+			if outcome.conn != nil {
+				_ = outcome.conn.Close()
+			}
+			e.cache.release(entry)
+		}()
+		return appproxy.DialResult{Metrics: metrics}, timeoutErr
+	}
 }
 
 func (e *singBoxNodeProtocolEngine) InvalidateFingerprint(fingerprint string) {

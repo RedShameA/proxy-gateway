@@ -29,6 +29,7 @@ func (g *Gateway) logFastestCandidateProbe(profileID string, result profileCandi
 		zap.Int64("duration_ms", result.Duration),
 	}
 	fields = appendHTTPStatusField(fields, result.Status)
+	fields = appendProbeTimingFields(fields, result.Timings)
 	fields = append(fields, zap.String("error", profileCandidateProbeError(result)))
 	g.log().Debug("profile candidate probe result", fields...)
 }
@@ -44,6 +45,7 @@ func (g *Gateway) logChainCandidateProbe(profileID string, result chainCandidate
 		zap.Int64("duration_ms", result.Duration),
 	}
 	fields = appendHTTPStatusField(fields, result.Status)
+	fields = appendProbeTimingFields(fields, result.Timings)
 	fields = append(fields, zap.String("error", chainCandidateProbeError(result)))
 	g.log().Debug("chain candidate probe result", fields...)
 }
@@ -51,6 +53,19 @@ func (g *Gateway) logChainCandidateProbe(profileID string, result chainCandidate
 func appendHTTPStatusField(fields []zap.Field, status int) []zap.Field {
 	if status > 0 {
 		fields = append(fields, zap.Int("http_status", status))
+	}
+	return fields
+}
+
+func appendProbeTimingFields(fields []zap.Field, timings appevaluations.ProbeTimings) []zap.Field {
+	fields = append(fields,
+		zap.Int64("dial_duration_ms", timings.DialDurationMS),
+		zap.Int64("cache_wait_ms", timings.CacheWaitMS),
+		zap.Int64("cache_build_ms", timings.CacheBuildMS),
+		zap.Int64("outbound_dial_ms", timings.OutboundDialMS),
+	)
+	if timings.HTTPDurationMS > 0 {
+		fields = append(fields, zap.Int64("http_duration_ms", timings.HTTPDurationMS))
 	}
 	return fields
 }

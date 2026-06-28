@@ -215,27 +215,27 @@ func (p *runServiceFakePorts) UpdateStateAndReleaseRetained(_ context.Context, _
 	return true
 }
 
-func (p *runServiceFakePorts) FetchNode(_ context.Context, node appproxy.Node, _ string) (int64, int, error) {
+func (p *runServiceFakePorts) FetchNode(_ context.Context, node appproxy.Node, _ string) (CandidateProbeMeasurement, error) {
 	if err := p.fetchNodeErr[node.ID]; err != nil {
-		return 0, 0, err
+		return CandidateProbeMeasurement{}, err
 	}
-	return p.fetchNodeDuration[node.ID], 204, nil
+	return CandidateProbeMeasurement{DurationMS: p.fetchNodeDuration[node.ID], HTTPStatus: 204}, nil
 }
 
-func (p *runServiceFakePorts) ProbeChainLink(_ context.Context, frontNode, exitNode appproxy.Node) (int64, error) {
+func (p *runServiceFakePorts) ProbeChainLink(_ context.Context, frontNode, exitNode appproxy.Node) (CandidateProbeMeasurement, error) {
 	key := frontNode.ID + "->" + exitNode.ID
 	if err := p.chainLinkErr[key]; err != nil {
-		return 0, err
+		return CandidateProbeMeasurement{}, err
 	}
-	return p.chainLinkDuration[key], nil
+	return CandidateProbeMeasurement{DurationMS: p.chainLinkDuration[key]}, nil
 }
 
-func (p *runServiceFakePorts) FetchChain(_ context.Context, frontNode, exitNode appproxy.Node, _ string) (int64, int, error) {
+func (p *runServiceFakePorts) FetchChain(_ context.Context, frontNode, exitNode appproxy.Node, _ string) (CandidateProbeMeasurement, error) {
 	key := frontNode.ID + "->" + exitNode.ID
 	if err := p.fetchChainErr[key]; err != nil {
-		return 0, 0, err
+		return CandidateProbeMeasurement{}, err
 	}
-	return p.fetchChainDuration[key], 204, nil
+	return CandidateProbeMeasurement{DurationMS: p.fetchChainDuration[key], HTTPStatus: 204}, nil
 }
 
 func (p *runServiceFakePorts) LogFastestCandidate(_ context.Context, _ string, result CandidateProbeResult[appproxy.Node]) {

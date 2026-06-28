@@ -1,9 +1,6 @@
 package app
 
-import (
-	"net"
-	"testing"
-)
+import "testing"
 
 func TestUpdateManualNodeInvalidatesOldRuntimeFingerprint(t *testing.T) {
 	g := NewForTest(t)
@@ -56,11 +53,11 @@ type trackingNodeProtocolEngine struct {
 	invalidated []string
 }
 
-func (t *trackingNodeProtocolEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+func (t *trackingNodeProtocolEngine) DialNode(node nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
 	panic("unexpected DialNode call")
 }
 
-func (t *trackingNodeProtocolEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (net.Conn, error) {
+func (t *trackingNodeProtocolEngine) DialChain(frontNode, exitNode nodeRecord, target string, timeouts dialTimeouts) (dialResult, error) {
 	panic("unexpected DialChain call")
 }
 

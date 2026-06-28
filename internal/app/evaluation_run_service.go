@@ -84,15 +84,15 @@ type evaluationProbePort struct {
 	settings evaluationSettings
 }
 
-func (p evaluationProbePort) FetchNode(_ context.Context, node nodeRecord, testURL string) (int64, int, error) {
+func (p evaluationProbePort) FetchNode(_ context.Context, node nodeRecord, testURL string) (appevaluations.CandidateProbeMeasurement, error) {
 	return p.g.fetchTestURLThroughNode(node, testURL, p.settings)
 }
 
-func (p evaluationProbePort) ProbeChainLink(_ context.Context, frontNode, exitNode nodeRecord) (int64, error) {
+func (p evaluationProbePort) ProbeChainLink(_ context.Context, frontNode, exitNode nodeRecord) (appevaluations.CandidateProbeMeasurement, error) {
 	return p.g.probeChainLink(frontNode, exitNode, p.settings)
 }
 
-func (p evaluationProbePort) FetchChain(_ context.Context, frontNode, exitNode nodeRecord, testURL string) (int64, int, error) {
+func (p evaluationProbePort) FetchChain(_ context.Context, frontNode, exitNode nodeRecord, testURL string) (appevaluations.CandidateProbeMeasurement, error) {
 	return p.g.fetchTestURLThroughChain(frontNode, exitNode, testURL, p.settings)
 }
 
@@ -105,6 +105,7 @@ func (o evaluationRunObserver) LogFastestCandidate(_ context.Context, profileID 
 		Node:     result.Candidate,
 		Duration: result.DurationMS,
 		Status:   result.HTTPStatus,
+		Timings:  result.Timings,
 		Err:      result.Err,
 	})
 }
@@ -117,6 +118,7 @@ func (o evaluationRunObserver) LogChainCandidate(_ context.Context, profileID st
 		},
 		Duration: result.DurationMS,
 		Status:   result.HTTPStatus,
+		Timings:  result.Timings,
 		Err:      result.Err,
 	})
 }

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -47,7 +48,7 @@ func TestProfileEvaluationMaintenanceRunLogsDebugCandidatesAndSelection(t *testi
 	t.Parallel()
 
 	g, observed := newObservedGatewayForTest(t)
-	g.protocolEngine = mixedProfileEvaluationEngine{failingNodeID: "node_debug_bad"}
+	g.protocolEngine = mixedProfileEvaluationEngine{failingNodeID: "node_debug_bad", failureDelay: 20 * time.Millisecond, responseDelay: 20 * time.Millisecond}
 	insertMaintenanceRunTestNode(t, g, "node_debug_ok", "debug-ok")
 	insertMaintenanceRunTestNode(t, g, "node_debug_bad", "debug-bad")
 	cfg := defaultAccessProfileConfig("profile_debug_partial_candidates")
@@ -85,13 +86,24 @@ func TestProfileEvaluationMaintenanceRunLogsDebugCandidatesAndSelection(t *testi
 	assertStringField(t, okFields, "node_name", "debug-ok")
 	assertBoolField(t, okFields, "success", true)
 	assertIntField(t, okFields, "http_status", 204)
+	assertNonNegativeIntField(t, okFields, "dial_duration_ms")
+	assertPositiveIntField(t, okFields, "http_duration_ms")
+	assertNonNegativeIntField(t, okFields, "cache_wait_ms")
+	assertNonNegativeIntField(t, okFields, "cache_build_ms")
+	assertNonNegativeIntField(t, okFields, "outbound_dial_ms")
 	assertStringField(t, okFields, "error", "")
 
 	badLog := observedLogWithStringField(t, candidateLogs, "node_id", "node_debug_bad")
 	badFields := badLog.ContextMap()
 	assertBoolField(t, badFields, "success", false)
 	assertStringField(t, badFields, "error", "candidate dial failed")
+	assertPositiveIntField(t, badFields, "duration_ms")
+	assertPositiveIntField(t, badFields, "dial_duration_ms")
+	assertNonNegativeIntField(t, badFields, "cache_wait_ms")
+	assertNonNegativeIntField(t, badFields, "cache_build_ms")
+	assertNonNegativeIntField(t, badFields, "outbound_dial_ms")
 	assertFieldAbsent(t, badFields, "http_status")
+	assertFieldAbsent(t, badFields, "http_duration_ms")
 
 	selectionLogs := observed.FilterMessage("profile evaluation selected path").All()
 	if len(selectionLogs) != 1 {
@@ -149,7 +161,12 @@ func TestChainLinkEvaluationDebugCandidateOmitsHTTPStatus(t *testing.T) {
 	assertStringField(t, fields, "exit_node_name", "chain-debug-exit")
 	assertBoolField(t, fields, "success", true)
 	assertStringField(t, fields, "error", "")
+	assertNonNegativeIntField(t, fields, "dial_duration_ms")
+	assertNonNegativeIntField(t, fields, "cache_wait_ms")
+	assertNonNegativeIntField(t, fields, "cache_build_ms")
+	assertNonNegativeIntField(t, fields, "outbound_dial_ms")
 	assertFieldAbsent(t, fields, "http_status")
+	assertFieldAbsent(t, fields, "http_duration_ms")
 }
 
 func TestSubscriptionRefreshMaintenanceRunLogsDebugSummaryWithoutRawContent(t *testing.T) {
@@ -269,6 +286,22 @@ func assertIntField(t *testing.T, fields map[string]any, key string, want int64)
 	got, ok := observedIntField(fields[key])
 	if !ok || got != want {
 		t.Fatalf("field %s = %#v, want %d", key, fields[key], want)
+	}
+}
+
+func assertPositiveIntField(t *testing.T, fields map[string]any, key string) {
+	t.Helper()
+	got, ok := observedIntField(fields[key])
+	if !ok || got <= 0 {
+		t.Fatalf("field %s = %#v, want positive integer", key, fields[key])
+	}
+}
+
+func assertNonNegativeIntField(t *testing.T, fields map[string]any, key string) {
+	t.Helper()
+	got, ok := observedIntField(fields[key])
+	if !ok || got < 0 {
+		t.Fatalf("field %s = %#v, want non-negative integer", key, fields[key])
 	}
 }
 
