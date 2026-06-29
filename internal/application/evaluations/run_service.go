@@ -9,7 +9,10 @@ import (
 	domainprofile "proxygateway/internal/domain/profile"
 )
 
-var errExitNodeIDsRequired = errors.New("exit_node_ids is required")
+var (
+	errExitNodeIDsRequired = errors.New("exit_node_ids is required")
+	errNoUsableExitNodes   = errors.New("no usable exit nodes")
+)
 
 type RuntimeSettings struct {
 	GlobalConcurrency    int
@@ -85,6 +88,41 @@ func NewRunService(deps RunServiceDeps) RunService {
 		deps.Observer = noopRunObserver{}
 	}
 	return RunService{deps: deps}
+}
+
+func (s RunService) CandidateCount(ctx context.Context, target Target, settings RuntimeSettings) int {
+	ctx = runContext(ctx)
+	switch target.Type {
+	case domainprofile.TypeFastest:
+		nodes, err := s.candidateNodes(ctx, target.Filter)
+		if err != nil {
+			return 0
+		}
+		return limitedCandidateCount(len(nodes), effectiveCandidateLimit(target.CandidateLimit, settings.SingleCandidateLimit))
+	case domainprofile.TypeChain:
+		if target.ChainEvaluationMode == domainprofile.ChainEvaluationModeChainLink {
+			exitNode, err := s.loadStrictExitNode(ctx, target.ExitNodeIDs)
+			if err != nil || exitNode.ID == "" {
+				return 0
+			}
+			nodes, err := s.candidateNodes(ctx, target.Filter)
+			if err != nil {
+				return 0
+			}
+			return len(excludeNodes(nodes, target.ExitNodeIDs))
+		}
+		exitNodes, err := s.loadUsableExitNodes(ctx, target.ExitNodeIDs)
+		if err != nil {
+			return 0
+		}
+		nodes, err := s.candidateNodes(ctx, target.Filter)
+		if err != nil {
+			return 0
+		}
+		return len(chainCandidatePairs(excludeNodes(nodes, target.ExitNodeIDs), exitNodes))
+	default:
+		return 0
+	}
 }
 
 func (s RunService) EvaluateFastest(ctx context.Context, target Target, settings RuntimeSettings) bool {
@@ -176,14 +214,14 @@ func (s RunService) EvaluateFastestFront(ctx context.Context, target Target, set
 	if !s.updateState(ctx, target, RunningStateUpdate(startedAt)) {
 		return false
 	}
-	if len(target.ExitNodeIDs) != 1 {
-		outcome := PlanChainInvalidConfig("chain_link requires exactly one exit_node_id", SwitchReasonInvalidChainConfig)
-		s.updateState(ctx, target, outcome.StateUpdate(s.nowMillis()))
-		return false
-	}
-	exitNode, err := s.loadUsableNode(ctx, target.ExitNodeIDs[0])
+	exitNode, err := s.loadStrictExitNode(ctx, target.ExitNodeIDs)
 	if err != nil {
-		retainCurrentPath := s.retainedChainLinkExitPathExists(ctx, target, target.ExitNodeIDs[0])
+		if errors.Is(err, errExitNodeIDsRequired) {
+			outcome := PlanChainInvalidConfig("chain_link requires exactly one exit_node_id", SwitchReasonInvalidChainConfig)
+			s.updateState(ctx, target, outcome.StateUpdate(s.nowMillis()))
+			return false
+		}
+		retainCurrentPath := len(target.ExitNodeIDs) == 1 && s.retainedChainLinkExitPathExists(ctx, target, target.ExitNodeIDs[0])
 		outcome := PlanChainMissingExitNode(err.Error(), retainCurrentPath)
 		s.updateState(ctx, target, outcome.StateUpdate(s.nowMillis()))
 		return false
@@ -246,7 +284,7 @@ func (s RunService) EvaluateEndToEndChain(ctx context.Context, target Target, se
 	if !s.updateState(ctx, target, RunningStateUpdate(startedAt)) {
 		return false
 	}
-	exitNodes, err := s.loadExitNodes(ctx, target.ExitNodeIDs)
+	exitNodes, err := s.loadUsableExitNodes(ctx, target.ExitNodeIDs)
 	if err != nil {
 		outcome := PlanChainMissingExitNode(err.Error(), s.retainedCurrentChainPathExists(ctx, target))
 		s.updateState(ctx, target, outcome.StateUpdate(s.nowMillis()))
@@ -354,7 +392,15 @@ func (s RunService) finishChainSelection(ctx context.Context, target Target, tes
 	)
 }
 
-func (s RunService) loadExitNodes(ctx context.Context, exitNodeIDs []string) ([]appproxy.Node, error) {
+func (s RunService) loadStrictExitNode(ctx context.Context, exitNodeIDs []string) (appproxy.Node, error) {
+	exitNodeIDs = normalizeStringList(exitNodeIDs)
+	if len(exitNodeIDs) != 1 {
+		return appproxy.Node{}, errExitNodeIDsRequired
+	}
+	return s.loadUsableNode(ctx, exitNodeIDs[0])
+}
+
+func (s RunService) loadUsableExitNodes(ctx context.Context, exitNodeIDs []string) ([]appproxy.Node, error) {
 	exitNodeIDs = normalizeStringList(exitNodeIDs)
 	if len(exitNodeIDs) == 0 {
 		return nil, errExitNodeIDsRequired
@@ -363,9 +409,12 @@ func (s RunService) loadExitNodes(ctx context.Context, exitNodeIDs []string) ([]
 	for _, exitNodeID := range exitNodeIDs {
 		node, err := s.loadUsableNode(ctx, exitNodeID)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		nodes = append(nodes, node)
+	}
+	if len(nodes) == 0 {
+		return nil, errNoUsableExitNodes
 	}
 	return nodes, nil
 }

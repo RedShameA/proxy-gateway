@@ -2,7 +2,35 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AccessProfileForm } from './AccessProfileForm';
 import { renderWithRouter } from '../test/utils';
-import type { AccessProfileDetail, AccessProfileWriteRequest } from '../types';
+import type { AccessProfileDetail, AccessProfileWriteRequest, NodeSummary } from '../types';
+
+const unknownCountry = {
+  value: '',
+  iso_code: null,
+  name_zh: '未知',
+  is_unknown: true,
+};
+
+function node(id: string, name: string): NodeSummary {
+  return {
+    id,
+    name,
+    type: 'http',
+    protocol: 'http',
+    server: '127.0.0.1',
+    server_port: 8080,
+    username: '',
+    password: '',
+    enabled: true,
+    state: 'enabled',
+    sources: [],
+    egress_ip: null,
+    egress_country: unknownCountry,
+    observation_latency_ms: null,
+    last_observed_at: null,
+    last_error: '',
+  };
+}
 
 function baseProfile(overrides: Partial<AccessProfileDetail> = {}): AccessProfileDetail {
   return {
@@ -102,5 +130,77 @@ describe('AccessProfileForm', () => {
 
     const identifier = screen.getByPlaceholderText('策略标识') as HTMLInputElement;
     expect(identifier.value).toBe('kept-profile-id');
+  });
+
+  it('submits end-to-end chain profiles with multiple exit nodes without changing mode', async () => {
+    const onSubmit = vi.fn<(payload: AccessProfileWriteRequest) => Promise<void>>().mockResolvedValue(undefined);
+    renderWithRouter(
+      <AccessProfileForm
+        initial={baseProfile({
+          type: 'chain',
+          exit_node_ids: ['exit-a', 'exit-b'],
+          chain_evaluation_mode: 'end_to_end',
+        })}
+        nodes={[node('exit-a', '出口 A'), node('exit-b', '出口 B')]}
+        countries={[]}
+        subscriptions={[]}
+        submitLabel="保存"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.chain_evaluation_mode).toBe('end_to_end');
+    expect(payload.exit_node_ids).toEqual(['exit-a', 'exit-b']);
+  });
+
+  it('submits chain-link profiles with a single exit node', async () => {
+    const onSubmit = vi.fn<(payload: AccessProfileWriteRequest) => Promise<void>>().mockResolvedValue(undefined);
+    renderWithRouter(
+      <AccessProfileForm
+        initial={baseProfile({
+          type: 'chain',
+          exit_node_ids: ['exit-a'],
+          chain_evaluation_mode: 'chain_link',
+        })}
+        nodes={[node('exit-a', '出口 A')]}
+        countries={[]}
+        subscriptions={[]}
+        submitLabel="保存"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.chain_evaluation_mode).toBe('chain_link');
+    expect(payload.exit_node_ids).toEqual(['exit-a']);
+  });
+
+  it('does not silently convert invalid chain-link multi-exit state to end-to-end', async () => {
+    const onSubmit = vi.fn<(payload: AccessProfileWriteRequest) => Promise<void>>().mockResolvedValue(undefined);
+    renderWithRouter(
+      <AccessProfileForm
+        initial={baseProfile({
+          type: 'chain',
+          exit_node_ids: ['exit-a', 'exit-b'],
+          chain_evaluation_mode: 'chain_link',
+        })}
+        nodes={[node('exit-a', '出口 A'), node('exit-b', '出口 B')]}
+        countries={[]}
+        subscriptions={[]}
+        submitLabel="保存"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(onSubmit).not.toHaveBeenCalled());
   });
 });

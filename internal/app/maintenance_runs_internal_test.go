@@ -382,6 +382,52 @@ func TestProfileEvaluationRunSucceedsWithUsableCandidateDespiteFailures(t *testi
 	}
 }
 
+func TestProfileEvaluationRunSkipsDisabledEndToEndExitNode(t *testing.T) {
+	t.Parallel()
+
+	g := NewForTest(t)
+	g.protocolEngine = mixedProfileEvaluationEngine{}
+	insertMaintenanceRunTestNode(t, g, "node_front", "front-node")
+	insertMaintenanceRunTestNode(t, g, "node_disabled_exit", "disabled-exit")
+	insertMaintenanceRunTestNode(t, g, "node_enabled_exit", "enabled-exit")
+	if _, err := g.store.DB.Exec(`UPDATE nodes SET enabled = 0 WHERE id = ?`, "node_disabled_exit"); err != nil {
+		t.Fatal(err)
+	}
+	cfg := defaultAccessProfileConfig("profile_chain_skip_disabled_exit")
+	cfg.Name = "chain skip disabled exit"
+	cfg.Type = "chain"
+	cfg.ExitNodeIDs = []string{"node_disabled_exit", "node_enabled_exit"}
+	cfg.ChainEvaluationMode = "end_to_end"
+	cfg.TestURL = "http://example.test/probe"
+	cfg.MinEvaluationIntervalSeconds = 0
+	if err := g.insertAccessProfileConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	runID, err := g.enqueueProfileEvaluationRun(cfg.ID, cfg.Name, "manual", cfg.ConfigVersion, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.runMaintenanceRun(runID); err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := g.loadMaintenanceRun(runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.State != maintenanceRunStateFinished || run.Result != maintenanceRunResultSuccess {
+		t.Fatalf("profile evaluation run status = %#v, want finished success", run)
+	}
+	if run.TotalCount != 1 || run.FinishedCount != 1 {
+		t.Fatalf("profile evaluation counts = %d/%d, want 1/1", run.FinishedCount, run.TotalCount)
+	}
+	detail := maintenanceRunDetail(run)
+	if detail["candidate_count"] != float64(1) || detail["selected_node_id"] != "node_front" || detail["selected_exit_node_id"] != "node_enabled_exit" {
+		t.Fatalf("profile evaluation detail = %#v, want usable exit only", detail)
+	}
+}
+
 func TestProfileEvaluationRunCancelsWhenSupersededByNewConfigVersion(t *testing.T) {
 	t.Parallel()
 

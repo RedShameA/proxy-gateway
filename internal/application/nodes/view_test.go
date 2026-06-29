@@ -26,6 +26,33 @@ func TestBuildListItemDerivesStateAndObservationFields(t *testing.T) {
 	}
 }
 
+func TestBuildListItemHidesLatencyForUnusableStaleObservation(t *testing.T) {
+	item := BuildListItem(
+		Record{ID: "node-1", Name: "node", Type: "http", Server: "127.0.0.1", ServerPort: 18080, Enabled: true},
+		nil,
+		ObservationSnapshot{
+			Found:         true,
+			Usable:        false,
+			EgressCountry: "US",
+			LatencyMS:     2162,
+			LastError:     "dial failed",
+			LastSuccessAt: 1000,
+			LastFailureAt: 2000,
+		},
+	)
+
+	if item["state"] != "unusable" || item["observation_latency_ms"] != nil || item["last_observed_at"] != int64(2000) {
+		t.Fatalf("item = %#v, want unusable without list latency and latest observed time", item)
+	}
+	observation, ok := item["observation"].(map[string]any)
+	if !ok {
+		t.Fatalf("observation = %#v, want map", item["observation"])
+	}
+	if observation["latency_ms"] != int64(2162) || observation["stale"] != true {
+		t.Fatalf("observation = %#v, want stale detail with historical latency", observation)
+	}
+}
+
 func TestNodeState(t *testing.T) {
 	tests := []struct {
 		name        string

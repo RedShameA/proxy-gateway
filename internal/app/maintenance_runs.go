@@ -404,19 +404,7 @@ func (g *Gateway) runProfileEvaluationMaintenanceRun(runID string) error {
 }
 
 func (g *Gateway) profileEvaluationCandidateCount(target profileEvaluationTarget, settings evaluationSettings) int {
-	nodes, err := g.candidateNodes(target.Filter)
-	if err != nil {
-		return 0
-	}
-	nodeIDs := make([]string, 0, len(nodes))
-	for _, node := range nodes {
-		nodeIDs = append(nodeIDs, node.ID)
-	}
-	return appevaluations.ProfileEvaluationCandidateCount(appevaluations.CandidateCountInput{
-		Target:               target,
-		CandidateNodeIDs:     nodeIDs,
-		SingleCandidateLimit: settings.SingleCandidateLimit,
-	})
+	return g.evaluationRunService(settings).CandidateCount(context.Background(), target, evaluationRuntimeSettings(settings))
 }
 
 func int64FromDetail(value any) int64 {

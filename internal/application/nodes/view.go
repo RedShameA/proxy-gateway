@@ -74,7 +74,7 @@ func BuildListItem(record Record, sources []SourceRecord, observation Observatio
 		egressIP = observation.EgressIP
 	}
 	var latencyMS any
-	if observation.LatencyMS > 0 {
+	if observation.Usable && observation.LatencyMS > 0 {
 		latencyMS = observation.LatencyMS
 	}
 	var lastObservedAt any

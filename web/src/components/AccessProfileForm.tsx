@@ -186,8 +186,24 @@ export function AccessProfileForm({ initial, nodes, countries, subscriptions, su
     setValues(prev => ({
       ...prev,
       exit_node_ids: ids,
-      chain_evaluation_mode: ids.length > 1 ? 'end_to_end' : prev.chain_evaluation_mode,
     }));
+  };
+
+  const setSingleExitNodeID = (id: string) => {
+    setValues(prev => ({
+      ...prev,
+      exit_node_ids: id ? [id] : [],
+    }));
+  };
+
+  const setChainEvaluationMode = (mode: ChainEvaluationMode) => {
+    setValues(prev => {
+      if (mode === 'chain_link' && prev.exit_node_ids.length > 1) {
+        Toast.warning('最快前置只支持单出口节点，请先只保留一个出口节点');
+        return prev;
+      }
+      return { ...prev, chain_evaluation_mode: mode };
+    });
   };
 
   const buildPayload = (): AccessProfileWriteRequest | null => {
@@ -213,8 +229,7 @@ export function AccessProfileForm({ initial, nodes, countries, subscriptions, su
       Toast.error('出口节点不能为空');
       return null;
     }
-    const chainMode = values.exit_node_ids.length > 1 ? 'end_to_end' : values.chain_evaluation_mode;
-    if (values.type === 'chain' && chainMode === 'chain_link' && values.exit_node_ids.length !== 1) {
+    if (values.type === 'chain' && values.chain_evaluation_mode === 'chain_link' && values.exit_node_ids.length !== 1) {
       Toast.error('最快前置只支持单出口节点');
       return null;
     }
@@ -242,7 +257,7 @@ export function AccessProfileForm({ initial, nodes, countries, subscriptions, su
       type: values.type,
       fixed_node_id: values.type === 'fixed_node' ? values.fixed_node_id : null,
       exit_node_ids: values.type === 'chain' ? values.exit_node_ids : [],
-      chain_evaluation_mode: values.type === 'chain' ? chainMode : null,
+      chain_evaluation_mode: values.type === 'chain' ? values.chain_evaluation_mode : null,
       test_url: testURL,
       candidate_filter: {
         source_mode: values.source_mode,
@@ -300,18 +315,24 @@ export function AccessProfileForm({ initial, nodes, countries, subscriptions, su
       {values.type === 'chain' && (
         <>
           <div>
-            <Text type="secondary">出口节点</Text>
-            <Select multiple value={values.exit_node_ids} onChange={v => setExitNodeIDs(normalizeStringArray(v))} placeholder="选择出口节点" style={{ width: '100%', marginTop: 4 }}>
-              {nodes.map(node => <Select.Option key={node.id} value={node.id}>{node.name}</Select.Option>)}
-            </Select>
-          </div>
-          <div>
             <Text type="secondary">链式模式</Text>
-            <Select value={values.chain_evaluation_mode} onChange={v => set('chain_evaluation_mode', v as ChainEvaluationMode)} style={{ width: '100%', marginTop: 4 }}>
+            <Select value={values.chain_evaluation_mode} onChange={v => setChainEvaluationMode(v as ChainEvaluationMode)} style={{ width: '100%', marginTop: 4 }}>
               <Select.Option value="end_to_end">整链最快</Select.Option>
               <Select.Option value="chain_link" disabled={values.exit_node_ids.length > 1}>最快前置</Select.Option>
             </Select>
-            {values.exit_node_ids.length > 1 && <Text size="small" type="secondary">多出口节点仅支持整链最快</Text>}
+            <Text size="small" type="secondary">最快前置只支持单出口；整链最快支持多出口</Text>
+          </div>
+          <div>
+            <Text type="secondary">出口节点</Text>
+            {values.chain_evaluation_mode === 'chain_link' ? (
+              <Select value={values.exit_node_ids[0] || undefined} onChange={v => setSingleExitNodeID(String(v || ''))} placeholder="选择出口节点" style={{ width: '100%', marginTop: 4 }}>
+                {nodes.map(node => <Select.Option key={node.id} value={node.id}>{node.name}</Select.Option>)}
+              </Select>
+            ) : (
+              <Select multiple value={values.exit_node_ids} onChange={v => setExitNodeIDs(normalizeStringArray(v))} placeholder="选择出口节点" style={{ width: '100%', marginTop: 4 }}>
+                {nodes.map(node => <Select.Option key={node.id} value={node.id}>{node.name}</Select.Option>)}
+              </Select>
+            )}
           </div>
         </>
       )}

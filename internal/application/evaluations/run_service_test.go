@@ -111,10 +111,120 @@ func TestRunServiceEvaluateFastestFrontSelectsBestChainLinkAndNotifiesObserver(t
 	}
 }
 
+func TestRunServiceEvaluateEndToEndChainSkipsUnusableExitNodes(t *testing.T) {
+	ports := newRunServiceFakePorts()
+	ports.nodes = []appproxy.Node{
+		{ID: "front_1", Name: "front", Enabled: true},
+		{ID: "exit_disabled", Name: "disabled exit", Enabled: false},
+	}
+	ports.nodeByID["exit_disabled"] = appproxy.Node{ID: "exit_disabled", Name: "disabled exit", Enabled: false}
+	ports.nodeByID["exit_ok"] = appproxy.Node{ID: "exit_ok", Name: "usable exit", Enabled: true}
+	ports.loadUsableNodeErr = map[string]error{"exit_disabled": errors.New("node is disabled")}
+	ports.fetchChainDuration = map[string]int64{"front_1->exit_ok": 80}
+
+	ok := NewRunService(ports.deps()).EvaluateEndToEndChain(context.Background(), Target{
+		ID:          "profile_1",
+		Type:        domainprofile.TypeChain,
+		ExitNodeIDs: []string{"exit_disabled", "exit_ok"},
+		TestURL:     "https://example.test/generate_204",
+	}, RuntimeSettings{GlobalConcurrency: 2})
+
+	if !ok {
+		t.Fatal("expected end-to-end evaluation to continue with usable exit")
+	}
+	if !reflect.DeepEqual(ports.releaseKeepNodeIDs, []string{"front_1", "exit_ok"}) {
+		t.Fatalf("released retained nodes with keep ids %v, want front_1 and exit_ok", ports.releaseKeepNodeIDs)
+	}
+	if got := stringValue(ports.releaseUpdate.CurrentExitNodeID); got != "exit_ok" {
+		t.Fatalf("selected exit node = %q, want exit_ok", got)
+	}
+	if len(ports.chainCandidateLogs) != 1 {
+		t.Fatalf("chain candidate logs = %d, want 1", len(ports.chainCandidateLogs))
+	}
+	if got := ports.chainCandidateLogs[0].Pair.FrontNode.ID; got != "front_1" {
+		t.Fatalf("front candidate = %q, want front_1", got)
+	}
+	if got := ports.chainCandidateLogs[0].Pair.ExitNode.ID; got != "exit_ok" {
+		t.Fatalf("exit candidate = %q, want exit_ok", got)
+	}
+}
+
+func TestRunServiceEvaluateEndToEndChainFailsWhenAllExitNodesUnusable(t *testing.T) {
+	ports := newRunServiceFakePorts()
+	ports.nodes = []appproxy.Node{{ID: "front_1", Name: "front", Enabled: true}}
+	ports.nodeByID["exit_disabled"] = appproxy.Node{ID: "exit_disabled", Name: "disabled exit", Enabled: false}
+	ports.loadUsableNodeErr = map[string]error{"exit_disabled": errors.New("node is disabled")}
+
+	ok := NewRunService(ports.deps()).EvaluateEndToEndChain(context.Background(), Target{
+		ID:          "profile_1",
+		Type:        domainprofile.TypeChain,
+		ExitNodeIDs: []string{"exit_disabled"},
+	}, RuntimeSettings{})
+
+	if ok {
+		t.Fatal("expected end-to-end evaluation with no usable exits to fail")
+	}
+	if len(ports.chainCandidateLogs) != 0 {
+		t.Fatalf("chain candidate logs = %d, want 0", len(ports.chainCandidateLogs))
+	}
+	final := ports.stateUpdates[len(ports.stateUpdates)-1]
+	if got := stringValue(final.LastError); got != "no usable exit nodes" {
+		t.Fatalf("last error = %q, want no usable exit nodes", got)
+	}
+	if got := stringValue(final.SwitchReason); got != SwitchReasonMissingExitNode {
+		t.Fatalf("switch reason = %q, want missing_exit_node", got)
+	}
+}
+
+func TestRunServiceCandidateCountUsesUsableExitNodes(t *testing.T) {
+	ports := newRunServiceFakePorts()
+	ports.nodes = []appproxy.Node{
+		{ID: "front_1", Name: "front", Enabled: true},
+		{ID: "exit_disabled", Name: "disabled exit", Enabled: false},
+	}
+	ports.nodeByID["exit_disabled"] = appproxy.Node{ID: "exit_disabled", Name: "disabled exit", Enabled: false}
+	ports.nodeByID["exit_ok"] = appproxy.Node{ID: "exit_ok", Name: "usable exit", Enabled: true}
+	ports.loadUsableNodeErr = map[string]error{"exit_disabled": errors.New("node is disabled")}
+
+	count := NewRunService(ports.deps()).CandidateCount(context.Background(), Target{
+		Type:        domainprofile.TypeChain,
+		ExitNodeIDs: []string{"exit_disabled", "exit_ok"},
+	}, RuntimeSettings{})
+
+	if count != 1 {
+		t.Fatalf("candidate count = %d, want 1", count)
+	}
+}
+
+func TestRunServiceEvaluateFastestFrontKeepsStrictExitNodeLoading(t *testing.T) {
+	ports := newRunServiceFakePorts()
+	ports.nodes = []appproxy.Node{{ID: "front_1", Name: "front", Enabled: true}}
+	ports.nodeByID["exit_disabled"] = appproxy.Node{ID: "exit_disabled", Name: "disabled exit", Enabled: false}
+	ports.loadUsableNodeErr = map[string]error{"exit_disabled": errors.New("node is disabled")}
+
+	ok := NewRunService(ports.deps()).EvaluateFastestFront(context.Background(), Target{
+		ID:          "profile_1",
+		Type:        domainprofile.TypeChain,
+		ExitNodeIDs: []string{"exit_disabled"},
+	}, RuntimeSettings{})
+
+	if ok {
+		t.Fatal("expected chain-link evaluation with disabled exit to fail")
+	}
+	if len(ports.chainCandidateLogs) != 0 {
+		t.Fatalf("chain candidate logs = %d, want 0", len(ports.chainCandidateLogs))
+	}
+	final := ports.stateUpdates[len(ports.stateUpdates)-1]
+	if got := stringValue(final.LastError); got != "node is disabled" {
+		t.Fatalf("last error = %q, want node is disabled", got)
+	}
+}
+
 type runServiceFakePorts struct {
 	nowMillis               int64
 	nodes                   []appproxy.Node
 	nodeByID                map[string]appproxy.Node
+	loadUsableNodeErr       map[string]error
 	currentNodeID           string
 	currentFrontNodeID      string
 	currentExitNodeID       string
@@ -138,6 +248,7 @@ func newRunServiceFakePorts() *runServiceFakePorts {
 	return &runServiceFakePorts{
 		nowMillis:          1000,
 		nodeByID:           map[string]appproxy.Node{},
+		loadUsableNodeErr:  map[string]error{},
 		retained:           map[string]bool{},
 		fetchNodeDuration:  map[string]int64{},
 		chainLinkDuration:  map[string]int64{},
@@ -165,6 +276,9 @@ func (p *runServiceFakePorts) CandidateNodes(context.Context, domainprofile.Cand
 }
 
 func (p *runServiceFakePorts) LoadUsableNode(_ context.Context, nodeID string) (appproxy.Node, error) {
+	if err := p.loadUsableNodeErr[nodeID]; err != nil {
+		return appproxy.Node{}, err
+	}
 	if node, ok := p.nodeByID[nodeID]; ok {
 		return node, nil
 	}
