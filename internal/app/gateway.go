@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -181,6 +182,10 @@ func (g *Gateway) Serve(ln net.Listener) error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				g.log().Info("listener closed", zap.Error(err))
+				return err
+			}
 			g.log().Error("listener accept failed", zap.Error(err))
 			return err
 		}

@@ -355,13 +355,13 @@ Front Node -> Exit Node -> Test URL
 
 When the Exit Node Set contains multiple Nodes, End-to-End Chain Evaluation evaluates eligible `Front Node x Exit Node` combinations as complete Proxy Paths. It must not first choose the best Exit Node and then choose the best Front Node as a separate stage.
 
-If the Chain Access Profile has no current usable Proxy Path, the first successful `Front Node -> Exit Node -> Test URL` result becomes current immediately. Evaluation continues in the background for other eligible combinations and maintains the Best Observed Proxy Path separately from the currently served Proxy Path. A later complete Proxy Path replaces the current path only when it satisfies Switching Tolerance, or the current path fails, becomes stale, or becomes unavailable.
+If the Chain Access Profile has no current usable Proxy Path, the Profile Evaluation Cycle first evaluates all eligible `Front Node x Exit Node` combinations and then promotes the best complete `Front Node -> Exit Node -> Test URL` result to current. The cycle maintains the Best Observed Proxy Path separately from the currently served Proxy Path. A later complete Proxy Path replaces the current path only when it satisfies Switching Tolerance, or the current path fails, becomes stale, or becomes unavailable.
 
 ### Stability
 
-Fastest-style Access Profiles should not wait for all possible candidates before they become usable, and they should not switch Proxy Paths on every minor measurement change.
+Fastest-style Access Profiles complete a full Profile Evaluation Cycle over their candidates before a path becomes usable, and once usable they should not switch Proxy Paths on every minor measurement change.
 
-When no current usable Proxy Path exists, the first successful eligible path becomes current immediately. Background Profile Evaluation continues checking other eligible candidates or chain combinations and maintains the Best Observed Proxy Path separately from the current Proxy Path. The current Proxy Path is then kept until:
+When no current usable Proxy Path exists, a full Profile Evaluation Cycle must complete before any path becomes current: the service evaluates all eligible candidates or chain combinations, then selects the best successful result as the current Proxy Path. Background Profile Evaluation continues to maintain the Best Observed Proxy Path separately from the current Proxy Path. The current Proxy Path is then kept until:
 
 - the current path fails
 - a different path clears the relative improvement threshold
@@ -822,7 +822,7 @@ The usability and reliability improvements should be implemented in this order:
    - use Chain Link Evaluation for `chain_link` mode
    - use End-to-End Evaluation for `end_to_end` mode
    - for multi-exit `end_to_end`, evaluate `Front Node x Exit Node` complete Proxy Paths over time
-   - use the first successful complete path immediately when no current path exists
+   - complete a full evaluation cycle over candidates before selecting the current path when no current path exists
    - apply Switching Tolerance before replacing a usable current path
 
 MVP excludes:

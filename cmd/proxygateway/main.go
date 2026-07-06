@@ -1,8 +1,13 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"net"
 	"os"
+	"os/signal"
+	"sync/atomic"
+	"syscall"
 
 	"proxygateway/internal/app"
 	storageinfra "proxygateway/internal/infrastructure/storage"
@@ -35,7 +40,8 @@ func run() int {
 		newGateway: func(dataDir string, logger *zap.Logger, storageConfig storageinfra.Config) (gatewayRunner, error) {
 			return app.New(dataDir, app.WithLogger(logger), app.WithStorageConfig(storageConfig))
 		},
-		listen: net.Listen,
+		listen:        net.Listen,
+		notifyContext: productionNotifyContext,
 	})
 }
 
@@ -45,12 +51,17 @@ type gatewayRunner interface {
 }
 
 type runDeps struct {
-	dataDir    string
-	listenAddr string
-	newLogger  func() (*zap.Logger, error)
-	lookupEnv  func(string) (string, bool)
-	newGateway func(dataDir string, logger *zap.Logger, storageConfig storageinfra.Config) (gatewayRunner, error)
-	listen     func(network, address string) (net.Listener, error)
+	dataDir       string
+	listenAddr    string
+	newLogger     func() (*zap.Logger, error)
+	lookupEnv     func(string) (string, bool)
+	newGateway    func(dataDir string, logger *zap.Logger, storageConfig storageinfra.Config) (gatewayRunner, error)
+	listen        func(network, address string) (net.Listener, error)
+	notifyContext func(context.Context) (context.Context, context.CancelFunc)
+}
+
+func productionNotifyContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 }
 
 func runWithDeps(deps runDeps) int {
@@ -89,8 +100,41 @@ func runWithDeps(deps runDeps) int {
 		logger.Error("listen failed", zap.String("addr", deps.listenAddr), zap.Error(err))
 		return 1
 	}
+	shutdownCtx, stop := deps.notifyContext(context.Background())
+	defer stop()
+	var shutdownRequested atomic.Bool
+	serveDone := make(chan struct{})
+	watcherDone := make(chan struct{})
+	go func() {
+		defer close(watcherDone)
+		select {
+		case <-serveDone:
+			return
+		case <-shutdownCtx.Done():
+			select {
+			case <-serveDone:
+				return
+			default:
+			}
+			shutdownRequested.Store(true)
+			logger.Info("shutdown requested; closing listener")
+			if closeErr := ln.Close(); closeErr != nil {
+				logger.Warn("close listener for shutdown failed", zap.Error(closeErr))
+			}
+		}
+	}()
 	logger.Info("proxy gateway listening", zap.String("addr", ln.Addr().String()))
-	if err := gateway.Serve(ln); err != nil {
+	err = gateway.Serve(ln)
+	close(serveDone)
+	<-watcherDone
+	if err == nil {
+		return 0
+	}
+	if shutdownRequested.Load() && errors.Is(err, net.ErrClosed) {
+		logger.Info("proxy gateway shutdown complete")
+		return 0
+	}
+	if err != nil {
 		logger.Error("serve failed", zap.Error(err))
 		return 1
 	}
