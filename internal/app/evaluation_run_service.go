@@ -4,15 +4,16 @@ import (
 	"context"
 
 	appevaluations "proxygateway/internal/application/evaluations"
+	probinginfra "proxygateway/internal/infrastructure/probing"
 )
 
-func (g *Gateway) evaluationRunService(settings evaluationSettings) appevaluations.RunService {
+func (g *Gateway) evaluationRunService(settings evaluationSettings, client probinginfra.Client) appevaluations.RunService {
 	return appevaluations.NewRunService(appevaluations.RunServiceDeps{
 		Clock:      evaluationClock{},
 		Candidates: evaluationCandidatePort{g: g},
 		Paths:      evaluationPathPort{g: g},
 		State:      evaluationStatePort{g: g},
-		Probes:     evaluationProbePort{g: g, settings: settings},
+		Probes:     evaluationProbePort{client: client, settings: settings},
 		Observer:   evaluationRunObserver{g: g},
 	})
 }
@@ -80,20 +81,20 @@ func (p evaluationStatePort) UpdateStateAndReleaseRetained(ctx context.Context, 
 }
 
 type evaluationProbePort struct {
-	g        *Gateway
+	client   probinginfra.Client
 	settings evaluationSettings
 }
 
 func (p evaluationProbePort) FetchNode(_ context.Context, node nodeRecord, testURL string) (appevaluations.CandidateProbeMeasurement, error) {
-	return p.g.fetchTestURLThroughNode(node, testURL, p.settings)
+	return fetchTestURLThroughNodeWithClient(p.client, node, testURL, p.settings)
 }
 
 func (p evaluationProbePort) ProbeChainLink(_ context.Context, frontNode, exitNode nodeRecord) (appevaluations.CandidateProbeMeasurement, error) {
-	return p.g.probeChainLink(frontNode, exitNode, p.settings)
+	return probeChainLinkWithClient(p.client, frontNode, exitNode, p.settings)
 }
 
 func (p evaluationProbePort) FetchChain(_ context.Context, frontNode, exitNode nodeRecord, testURL string) (appevaluations.CandidateProbeMeasurement, error) {
-	return p.g.fetchTestURLThroughChain(frontNode, exitNode, testURL, p.settings)
+	return fetchTestURLThroughChainWithClient(p.client, frontNode, exitNode, testURL, p.settings)
 }
 
 type evaluationRunObserver struct {

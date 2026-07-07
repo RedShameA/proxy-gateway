@@ -7,6 +7,8 @@ import (
 	appevaluations "proxygateway/internal/application/evaluations"
 	domainprofile "proxygateway/internal/domain/profile"
 	probinginfra "proxygateway/internal/infrastructure/probing"
+
+	"go.uber.org/zap"
 )
 
 const defaultProfileTestURL = "https://www.gstatic.com/generate_204"
@@ -117,7 +119,12 @@ func (g *Gateway) updateProfileEvaluationStateWithContext(ctx context.Context, t
 		ctx = context.Background()
 	}
 	updated, err := g.evaluationRepo.UpdateProfileState(ctx, target.ID, target.ConfigVersion, update)
-	return err == nil && updated
+	if err != nil || !updated {
+		return false
+	}
+	g.triggerServiceOutboundSync("evaluation_state")
+	g.warmCurrentServiceOutboundPath(ctx, target.ID)
+	return true
 }
 
 func (g *Gateway) updateProfileEvaluationStateAndReleaseRetained(target profileEvaluationTarget, keepNodeIDs []string, update appevaluations.StateUpdate) bool {
@@ -133,6 +140,8 @@ func (g *Gateway) updateProfileEvaluationStateAndReleaseRetainedWithContext(ctx 
 		return false
 	}
 	g.invalidateRuntimeFingerprints(result.DeletedFingerprints)
+	g.triggerServiceOutboundSync("evaluation_state")
+	g.warmCurrentServiceOutboundPath(ctx, target.ID)
 	return true
 }
 
@@ -164,7 +173,13 @@ func (r profileCandidateProbeResult) failureMessage() string {
 }
 
 func (g *Gateway) evaluateFastestProfile(target profileEvaluationTarget, settings evaluationSettings) bool {
-	return g.evaluationRunService(settings).EvaluateFastest(context.Background(), target, evaluationRuntimeSettings(settings))
+	client, closeClient, err := g.temporaryProbeClient()
+	if err != nil {
+		g.log().Warn("create temporary evaluation probe client failed", zap.String("profile_id", target.ID), zap.Error(err))
+		return false
+	}
+	defer closeClient()
+	return g.evaluationRunService(settings, client).EvaluateFastest(context.Background(), target, evaluationRuntimeSettings(settings))
 }
 
 func evaluationRuntimeSettings(settings evaluationSettings) appevaluations.RuntimeSettings {
@@ -298,12 +313,28 @@ func internalNodeSourceMode(mode string) string {
 }
 
 func (g *Gateway) fetchTestURLThroughNode(node nodeRecord, testURL string, settings evaluationSettings) (appevaluations.CandidateProbeMeasurement, error) {
-	result, err := g.probeClient().FetchThroughNode(node, testURL, settings.probeDialTimeouts())
+	return fetchTestURLThroughNodeWithClient(g.probeClient(), node, testURL, settings)
+}
+
+func fetchTestURLThroughNodeWithClient(client probinginfra.Client, node nodeRecord, testURL string, settings evaluationSettings) (appevaluations.CandidateProbeMeasurement, error) {
+	result, err := client.FetchThroughNode(node, testURL, settings.probeDialTimeouts())
 	return candidateProbeMeasurementFromHTTPResult(result), err
 }
 
 func (g *Gateway) probeClient() probinginfra.Client {
 	return probinginfra.Client{Engine: g.nodeEngine()}
+}
+
+func (g *Gateway) temporaryProbeClient() (probinginfra.Client, func(), error) {
+	provider, ok := g.protocolEngine.(temporaryNodeProtocolEngineProvider)
+	if !ok {
+		return g.probeClient(), func() {}, nil
+	}
+	engine, err := provider.NewTemporaryNodeProtocolEngine()
+	if err != nil {
+		return probinginfra.Client{}, func() {}, err
+	}
+	return probinginfra.Client{Engine: engine}, func() { _ = engine.Close() }, nil
 }
 
 func candidateProbeMeasurementFromHTTPResult(result probinginfra.HTTPResult) appevaluations.CandidateProbeMeasurement {

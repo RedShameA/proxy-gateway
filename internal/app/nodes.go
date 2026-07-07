@@ -49,6 +49,7 @@ func (g *Gateway) createNodeSource(input nodeCreateInput) (map[string]any, error
 		if err != nil {
 			return nil, newNodeOperationError(apperrors.KindBadRequest, err.Error(), err)
 		}
+		g.triggerServiceOutboundSync("node_create")
 		return result, nil
 	}
 	nodeName := strings.TrimSpace(input.Name)
@@ -65,6 +66,7 @@ func (g *Gateway) createNodeSource(input nodeCreateInput) (map[string]any, error
 		return nil, newNodeOperationError(apperrors.KindInternal, "create node", err)
 	}
 	g.enqueueNodeObservationForManualImport(id, nodeName)
+	g.triggerServiceOutboundSync("node_create")
 	return map[string]any{"id": id}, nil
 }
 
@@ -98,6 +100,7 @@ func (g *Gateway) patchNodeSource(nodeID string, req nodePatchRequest) (map[stri
 	if result.RuntimeFingerprint != "" {
 		g.invalidateRuntimeFingerprint(result.RuntimeFingerprint)
 	}
+	g.triggerServiceOutboundSync("node_update")
 	return map[string]any{"updated": true, "id": nodeID, "split": false}, nil
 }
 
@@ -229,6 +232,7 @@ func (g *Gateway) updateManualNode(nodeID string, req nodePatchRequest) (string,
 	}
 	g.invalidateRuntimeFingerprints(result.InvalidatedFingerprints)
 	g.enqueueNodeObservationForManualImport(result.NodeID, node.Name)
+	g.triggerServiceOutboundSync("node_update")
 	return result.NodeID, result.Split, nil
 }
 
@@ -242,6 +246,7 @@ func (g *Gateway) deleteManualNodeSource(nodeID string) error {
 	}
 	g.invalidateRuntimeFingerprints(result.DeletedFingerprints)
 	g.notifyMaintenanceRunner()
+	g.triggerServiceOutboundSync("node_delete")
 	return nil
 }
 

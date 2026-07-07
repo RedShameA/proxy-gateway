@@ -4,6 +4,9 @@ import (
 	"context"
 
 	appevaluations "proxygateway/internal/application/evaluations"
+	probinginfra "proxygateway/internal/infrastructure/probing"
+
+	"go.uber.org/zap"
 )
 
 const defaultChainLinkProbeURL = defaultProfileTestURL
@@ -33,20 +36,40 @@ func (r chainCandidateProbeResult) failureMessage() string {
 }
 
 func (g *Gateway) evaluateFastestFrontProfile(target profileEvaluationTarget, settings evaluationSettings) bool {
-	return g.evaluationRunService(settings).EvaluateFastestFront(context.Background(), target, evaluationRuntimeSettings(settings))
+	client, closeClient, err := g.temporaryProbeClient()
+	if err != nil {
+		g.log().Warn("create temporary evaluation probe client failed", zap.String("profile_id", target.ID), zap.Error(err))
+		return false
+	}
+	defer closeClient()
+	return g.evaluationRunService(settings, client).EvaluateFastestFront(context.Background(), target, evaluationRuntimeSettings(settings))
 }
 
 func (g *Gateway) probeChainLink(frontNode, exitNode nodeRecord, settings evaluationSettings) (appevaluations.CandidateProbeMeasurement, error) {
-	result, err := g.probeClient().ProbeChainLink(frontNode, exitNode, defaultChainLinkProbeURL, settings.probeDialTimeouts())
+	return probeChainLinkWithClient(g.probeClient(), frontNode, exitNode, settings)
+}
+
+func probeChainLinkWithClient(client probinginfra.Client, frontNode, exitNode nodeRecord, settings evaluationSettings) (appevaluations.CandidateProbeMeasurement, error) {
+	result, err := client.ProbeChainLink(frontNode, exitNode, defaultChainLinkProbeURL, settings.probeDialTimeouts())
 	return candidateProbeMeasurementFromDialResult(result), err
 }
 
 func (g *Gateway) evaluateEndToEndChainProfile(target profileEvaluationTarget, settings evaluationSettings) bool {
-	return g.evaluationRunService(settings).EvaluateEndToEndChain(context.Background(), target, evaluationRuntimeSettings(settings))
+	client, closeClient, err := g.temporaryProbeClient()
+	if err != nil {
+		g.log().Warn("create temporary evaluation probe client failed", zap.String("profile_id", target.ID), zap.Error(err))
+		return false
+	}
+	defer closeClient()
+	return g.evaluationRunService(settings, client).EvaluateEndToEndChain(context.Background(), target, evaluationRuntimeSettings(settings))
 }
 
 func (g *Gateway) fetchTestURLThroughChain(frontNode, exitNode nodeRecord, testURL string, settings evaluationSettings) (appevaluations.CandidateProbeMeasurement, error) {
-	result, err := g.probeClient().FetchThroughChain(frontNode, exitNode, testURL, settings.probeDialTimeouts())
+	return fetchTestURLThroughChainWithClient(g.probeClient(), frontNode, exitNode, testURL, settings)
+}
+
+func fetchTestURLThroughChainWithClient(client probinginfra.Client, frontNode, exitNode nodeRecord, testURL string, settings evaluationSettings) (appevaluations.CandidateProbeMeasurement, error) {
+	result, err := client.FetchThroughChain(frontNode, exitNode, testURL, settings.probeDialTimeouts())
 	return candidateProbeMeasurementFromHTTPResult(result), err
 }
 

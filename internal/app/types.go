@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	appadmin "proxygateway/internal/application/admin"
 	appdictionaries "proxygateway/internal/application/dictionaries"
@@ -24,40 +25,45 @@ import (
 )
 
 type Gateway struct {
-	store                 storageinfra.Handle
-	txRunners             storageinfra.TxRunners
-	dataDir               string
-	protocolEngine        nodeProtocolEngine
-	geoIP                 *geoipinfra.Service
-	geoIPStatusRepo       appgeoip.StatusRepository
-	maintenance           *maintenanceRunner
-	maintenanceAuxRepo    appmaintenance.AuxiliaryRepository
-	maintenanceRunRepo    appmaintenance.Repository
-	overviewRepo          appoverview.Repository
-	dictionaryRepo        appdictionaries.Repository
-	nodeRepo              appnodes.Repository
-	nodeObservationRepo   appobservations.PersistenceRepository
-	evaluationRepo        appevaluations.Repository
-	requestLogs           *appproxy.RequestLogWriter
-	requestLogService     *appproxy.RequestLogService
-	requestLogRepo        appproxy.RequestLogRepository
-	proxyCredentialRepo   appproxy.CredentialRepository
-	profileConfigRepo     appprofiles.ConfigRepository
-	profileCredentialRepo appprofiles.CredentialRepository
-	subscriptionRepo      appsubscriptions.Repository
-	subscriptionFetcher   appsubscriptions.ContentFetcher
-	kvSettingsRepo        appsettings.KVRepository
-	systemSettingsRepo    appsettings.SystemRepository
-	adminRepo             appadmin.Repository
-	adminLogins           *appadmin.LoginLimiter
-	ctx                   context.Context
-	cancel                context.CancelFunc
-	closeOnce             sync.Once
-	logger                *zap.Logger
+	store                         storageinfra.Handle
+	txRunners                     storageinfra.TxRunners
+	dataDir                       string
+	protocolEngine                nodeProtocolEngine
+	geoIP                         *geoipinfra.Service
+	geoIPStatusRepo               appgeoip.StatusRepository
+	maintenance                   *maintenanceRunner
+	maintenanceAuxRepo            appmaintenance.AuxiliaryRepository
+	maintenanceRunRepo            appmaintenance.Repository
+	overviewRepo                  appoverview.Repository
+	dictionaryRepo                appdictionaries.Repository
+	nodeRepo                      appnodes.Repository
+	nodeObservationRepo           appobservations.PersistenceRepository
+	evaluationRepo                appevaluations.Repository
+	requestLogs                   *appproxy.RequestLogWriter
+	requestLogService             *appproxy.RequestLogService
+	requestLogRepo                appproxy.RequestLogRepository
+	proxyCredentialRepo           appproxy.CredentialRepository
+	profileConfigRepo             appprofiles.ConfigRepository
+	profileCredentialRepo         appprofiles.CredentialRepository
+	subscriptionRepo              appsubscriptions.Repository
+	subscriptionFetcher           appsubscriptions.ContentFetcher
+	kvSettingsRepo                appsettings.KVRepository
+	systemSettingsRepo            appsettings.SystemRepository
+	adminRepo                     appadmin.Repository
+	adminLogins                   *appadmin.LoginLimiter
+	ctx                           context.Context
+	cancel                        context.CancelFunc
+	closeOnce                     sync.Once
+	serviceOutboundSyncOnce       sync.Once
+	serviceOutboundSyncGeneration atomic.Uint64
+	serviceOutboundSyncCh         chan struct{}
+	logger                        *zap.Logger
 }
 
 type nodeProtocolEngine = appproxy.NodeProtocolEngine
 type closeableNodeProtocolEngine = appproxy.CloseableNodeProtocolEngine
+type temporaryNodeProtocolEngineProvider = appproxy.TemporaryNodeProtocolEngineProvider
+type serviceOutboundCacheController = appproxy.ServiceOutboundCacheController
 
 type geoIPCountryService interface {
 	LookupCountry(ip string) string

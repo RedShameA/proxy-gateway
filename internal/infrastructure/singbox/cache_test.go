@@ -47,6 +47,41 @@ func TestSingBoxOutboundCacheInvalidatesAndClosesReleasedEntries(t *testing.T) {
 	}
 }
 
+func TestSingBoxTemporaryOutboundCacheClosesReleasedEntry(t *testing.T) {
+	t.Parallel()
+
+	cache := newSingBoxTemporaryOutboundCache()
+	var builds int32
+	var closes int32
+
+	entry, _, err := cache.acquireSingle("fingerprint-1", func() (*singBoxCachedOutbound, error) {
+		atomic.AddInt32(&builds, 1)
+		return newSingBoxCachedOutbound("fingerprint-1", []string{"fingerprint-1"}, nil, func() error {
+			atomic.AddInt32(&closes, 1)
+			return nil
+		}), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache.release(entry)
+	if got := atomic.LoadInt32(&closes); got != 1 {
+		t.Fatalf("closes after temporary release = %d, want 1", got)
+	}
+
+	replacement, _, err := cache.acquireSingle("fingerprint-1", func() (*singBoxCachedOutbound, error) {
+		atomic.AddInt32(&builds, 1)
+		return newSingBoxCachedOutbound("fingerprint-1", []string{"fingerprint-1"}, nil, nil), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache.release(replacement)
+	if got := atomic.LoadInt32(&builds); got != 2 {
+		t.Fatalf("builds = %d, want temporary cache to rebuild after release", got)
+	}
+}
+
 func TestSingBoxOutboundCacheClosesInvalidatedEntryOnRelease(t *testing.T) {
 	t.Parallel()
 

@@ -404,7 +404,7 @@ func (g *Gateway) runProfileEvaluationMaintenanceRun(runID string) error {
 }
 
 func (g *Gateway) profileEvaluationCandidateCount(target profileEvaluationTarget, settings evaluationSettings) int {
-	return g.evaluationRunService(settings).CandidateCount(context.Background(), target, evaluationRuntimeSettings(settings))
+	return g.evaluationRunService(settings, g.probeClient()).CandidateCount(context.Background(), target, evaluationRuntimeSettings(settings))
 }
 
 func int64FromDetail(value any) int64 {

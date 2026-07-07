@@ -73,6 +73,7 @@ func (g *Gateway) createSubscriptionSource(input subscriptionCreateInput) (subsc
 		return subscriptionImportResult{}, newSubscriptionOperationError(apperrors.KindBadGateway, err.Error(), subscriptionFetchError{err: err})
 	}
 	g.invalidateRuntimeFingerprints(result.DeletedFingerprints)
+	g.triggerServiceOutboundSync("subscription_create")
 	if _, err := g.enqueueObservationForSubscriptionNodes(result.ImportResult.ID, appmaintenance.TriggerSubscriptionImport); err != nil {
 		g.log().Warn("enqueue subscription node observation failed",
 			zap.String("subscription_id", result.ImportResult.ID),
@@ -134,6 +135,7 @@ func (g *Gateway) deleteSubscriptionSource(subscriptionID string) error {
 	}
 	g.invalidateRuntimeFingerprints(result.DeletedFingerprints)
 	g.notifyMaintenanceRunner()
+	g.triggerServiceOutboundSync("subscription_delete")
 	return nil
 }
 
@@ -181,6 +183,7 @@ func (g *Gateway) importSubscriptionWithContent(sub subscriptionRecord, content 
 		return subscriptionImportResult{}, err
 	}
 	g.invalidateRuntimeFingerprints(result.DeletedFingerprints)
+	g.triggerServiceOutboundSync("subscription_import")
 	return result.ImportResult, nil
 }
 

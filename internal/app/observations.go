@@ -95,6 +95,11 @@ func (g *Gateway) runNodeObservationMaintenanceRun(runID string) error {
 	if concurrency > len(targets) {
 		concurrency = len(targets)
 	}
+	probeClient, closeProbeClient, err := g.temporaryProbeClient()
+	if err != nil {
+		return err
+	}
+	defer closeProbeClient()
 	if err := g.startMaintenanceRun(run.ID); err != nil {
 		return err
 	}
@@ -103,7 +108,7 @@ func (g *Gateway) runNodeObservationMaintenanceRun(runID string) error {
 	for _, node := range targets {
 		batchTargets = append(batchTargets, appobservations.ExecutableTarget{
 			Target:   appobservations.NodeTarget{ID: node.ID, Name: node.Name},
-			Executor: nodeObservationProbeExecutor{client: g.probeClient(), node: node, probeURL: probeURL, settings: evalSettings},
+			Executor: nodeObservationProbeExecutor{client: probeClient, node: node, probeURL: probeURL, settings: evalSettings},
 		})
 	}
 	execution := appobservations.ExecuteMaintenanceRun(g.nodeObservationRepo, lookup, appobservations.MaintenanceRunContext{
@@ -120,6 +125,9 @@ func (g *Gateway) runNodeObservationMaintenanceRun(runID string) error {
 	}
 	if outcome.EnqueueWaitingProfiles {
 		g.enqueueProfileEvaluationsWaitingForObservation()
+	}
+	if len(execution.Results) > 0 {
+		g.triggerServiceOutboundSync("node_observation")
 	}
 	return nil
 }
@@ -188,13 +196,19 @@ func (g *Gateway) nodeObservationRunTargets(run maintenanceRunRecord, detail map
 }
 
 func (g *Gateway) observeNode(node nodeRecord, probeURL string, settings evaluationSettings) (bool, error) {
+	probeClient, closeProbeClient, err := g.temporaryProbeClient()
+	if err != nil {
+		return false, err
+	}
+	defer closeProbeClient()
 	result := appobservations.ExecuteNodeObservation(
 		g.nodeObservationRepo,
 		geoIPCountryLookup{geoIP: g.geoIP},
-		nodeObservationProbeExecutor{client: g.probeClient(), node: node, probeURL: probeURL, settings: settings},
+		nodeObservationProbeExecutor{client: probeClient, node: node, probeURL: probeURL, settings: settings},
 		appobservations.NodeTarget{ID: node.ID, Name: node.Name},
 		unixMillisNow(),
 	)
+	g.triggerServiceOutboundSync("node_observation")
 	if result.OK {
 		return true, nil
 	}

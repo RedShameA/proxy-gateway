@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,25 +27,44 @@ import (
 
 	appproxy "proxygateway/internal/application/proxy"
 	appsubscriptions "proxygateway/internal/application/subscriptions"
+
+	"go.uber.org/zap"
 )
 
 type singBoxNodeProtocolEngine struct {
-	builder *singBoxOutboundBuilder
-	cache   *singBoxOutboundCache
+	builder                     *singBoxOutboundBuilder
+	cache                       *singBoxOutboundCache
+	temporaryMu                 sync.Mutex
+	temporaryCaches             map[*singBoxOutboundCache]struct{}
+	closing                     bool
+	closeOnce                   sync.Once
+	closeErr                    error
+	latestServiceSyncGeneration atomic.Uint64
+	logger                      *zap.Logger
 }
 
-func NewNodeProtocolEngine() (*singBoxNodeProtocolEngine, error) {
+func NewNodeProtocolEngine(loggers ...*zap.Logger) (*singBoxNodeProtocolEngine, error) {
 	builder, err := newSingBoxOutboundBuilder()
 	if err != nil {
 		return nil, err
 	}
+	logger := zap.NewNop()
+	if len(loggers) > 0 && loggers[0] != nil {
+		logger = loggers[0]
+	}
 	return &singBoxNodeProtocolEngine{
-		builder: builder,
-		cache:   newSingBoxOutboundCache(),
+		builder:         builder,
+		cache:           newSingBoxServiceOutboundCache(),
+		temporaryCaches: make(map[*singBoxOutboundCache]struct{}),
+		logger:          logger,
 	}, nil
 }
 
 func (e *singBoxNodeProtocolEngine) DialNode(node appproxy.Node, target string, timeouts appproxy.DialTimeouts) (appproxy.DialResult, error) {
+	return e.dialNode(e.cache, node, target, timeouts)
+}
+
+func (e *singBoxNodeProtocolEngine) dialNode(cache *singBoxOutboundCache, node appproxy.Node, target string, timeouts appproxy.DialTimeouts) (appproxy.DialResult, error) {
 	if !node.Enabled {
 		return appproxy.DialResult{}, errors.New("node disabled")
 	}
@@ -52,11 +72,25 @@ func (e *singBoxNodeProtocolEngine) DialNode(node appproxy.Node, target string, 
 	if err != nil {
 		return appproxy.DialResult{}, err
 	}
+	entry, metrics, err := e.acquireSingleOutbound(cache, node)
+	if err != nil {
+		return appproxy.DialResult{Metrics: metrics}, err
+	}
+	return dialCachedOutbound(cache, entry, targetAddr, timeouts, metrics)
+}
+
+func (e *singBoxNodeProtocolEngine) acquireSingleOutbound(cache *singBoxOutboundCache, node appproxy.Node) (*singBoxCachedOutbound, appproxy.DialMetrics, error) {
+	if cache == nil {
+		return nil, appproxy.DialMetrics{}, errSingBoxOutboundCacheClosed
+	}
+	if !node.Enabled {
+		return nil, appproxy.DialMetrics{}, errors.New("node disabled")
+	}
 	outboundJSON, fingerprint, err := runtimeOutboundJSONForNode(node)
 	if err != nil {
-		return appproxy.DialResult{}, err
+		return nil, appproxy.DialMetrics{}, err
 	}
-	entry, metrics, err := e.cache.acquireSingle(fingerprint, func() (*singBoxCachedOutbound, error) {
+	return cache.acquireSingle(fingerprint, func() (*singBoxCachedOutbound, error) {
 		outbound, err := e.builder.buildSingle(outboundJSON, "node-"+shortRuntimeTag(fingerprint))
 		if err != nil {
 			return nil, err
@@ -65,33 +99,47 @@ func (e *singBoxNodeProtocolEngine) DialNode(node appproxy.Node, target string, 
 			return closeSingBoxOutbound(outbound)
 		}), nil
 	})
-	if err != nil {
-		return appproxy.DialResult{Metrics: metrics}, err
-	}
-	return e.dialCachedOutbound(entry, targetAddr, timeouts, metrics)
 }
 
 func (e *singBoxNodeProtocolEngine) DialChain(frontNode, exitNode appproxy.Node, target string, timeouts appproxy.DialTimeouts) (appproxy.DialResult, error) {
+	return e.dialChain(e.cache, frontNode, exitNode, target, timeouts)
+}
+
+func (e *singBoxNodeProtocolEngine) dialChain(cache *singBoxOutboundCache, frontNode, exitNode appproxy.Node, target string, timeouts appproxy.DialTimeouts) (appproxy.DialResult, error) {
 	if !frontNode.Enabled || !exitNode.Enabled {
 		return appproxy.DialResult{}, errors.New("node disabled")
-	}
-	if appsubscriptions.NormalizeNodeType(exitNode.Type) == "direct" {
-		return e.DialNode(frontNode, target, timeouts)
 	}
 	targetAddr, err := socksaddrFromTarget(target)
 	if err != nil {
 		return appproxy.DialResult{}, err
 	}
+	entry, metrics, err := e.acquireChainOutbound(cache, frontNode, exitNode)
+	if err != nil {
+		return appproxy.DialResult{Metrics: metrics}, err
+	}
+	return dialCachedOutbound(cache, entry, targetAddr, timeouts, metrics)
+}
+
+func (e *singBoxNodeProtocolEngine) acquireChainOutbound(cache *singBoxOutboundCache, frontNode, exitNode appproxy.Node) (*singBoxCachedOutbound, appproxy.DialMetrics, error) {
+	if cache == nil {
+		return nil, appproxy.DialMetrics{}, errSingBoxOutboundCacheClosed
+	}
+	if !frontNode.Enabled || !exitNode.Enabled {
+		return nil, appproxy.DialMetrics{}, errors.New("node disabled")
+	}
+	if appsubscriptions.NormalizeNodeType(exitNode.Type) == "direct" {
+		return e.acquireSingleOutbound(cache, frontNode)
+	}
 	frontJSON, frontFingerprint, err := runtimeOutboundJSONForNode(frontNode)
 	if err != nil {
-		return appproxy.DialResult{}, err
+		return nil, appproxy.DialMetrics{}, err
 	}
 	exitJSON, exitFingerprint, err := runtimeOutboundJSONForNode(exitNode)
 	if err != nil {
-		return appproxy.DialResult{}, err
+		return nil, appproxy.DialMetrics{}, err
 	}
 	chainKey := frontFingerprint + "->" + exitFingerprint
-	entry, metrics, err := e.cache.acquireChain(chainKey, []string{frontFingerprint, exitFingerprint}, func() (*singBoxCachedOutbound, error) {
+	return cache.acquireChain(chainKey, []string{frontFingerprint, exitFingerprint}, func() (*singBoxCachedOutbound, error) {
 		frontTag := "chain-front-" + shortRuntimeTag(frontFingerprint)
 		exitTag := "chain-exit-" + shortRuntimeTag(exitFingerprint)
 		graph, err := e.builder.buildChain(frontJSON, exitJSON, frontTag, exitTag)
@@ -100,10 +148,6 @@ func (e *singBoxNodeProtocolEngine) DialChain(frontNode, exitNode appproxy.Node,
 		}
 		return newSingBoxCachedOutbound(chainKey, []string{frontFingerprint, exitFingerprint}, graph.exitOutbound, graph.Close), nil
 	})
-	if err != nil {
-		return appproxy.DialResult{Metrics: metrics}, err
-	}
-	return e.dialCachedOutbound(entry, targetAddr, timeouts, metrics)
 }
 
 type singBoxOutboundDialOutcome struct {
@@ -113,6 +157,10 @@ type singBoxOutboundDialOutcome struct {
 }
 
 func (e *singBoxNodeProtocolEngine) dialCachedOutbound(entry *singBoxCachedOutbound, targetAddr M.Socksaddr, timeouts appproxy.DialTimeouts, metrics appproxy.DialMetrics) (appproxy.DialResult, error) {
+	return dialCachedOutbound(e.cache, entry, targetAddr, timeouts, metrics)
+}
+
+func dialCachedOutbound(cache *singBoxOutboundCache, entry *singBoxCachedOutbound, targetAddr M.Socksaddr, timeouts appproxy.DialTimeouts, metrics appproxy.DialMetrics) (appproxy.DialResult, error) {
 	ctx, cancel := dialContextForTimeouts(timeouts)
 	dialStart := time.Now()
 	done := make(chan singBoxOutboundDialOutcome, 1)
@@ -128,7 +176,7 @@ func (e *singBoxNodeProtocolEngine) dialCachedOutbound(entry *singBoxCachedOutbo
 	select {
 	case outcome := <-done:
 		cancel()
-		e.cache.release(entry)
+		cache.release(entry)
 		metrics.OutboundDialMS = outcome.elapsedMS
 		return appproxy.DialResult{Conn: outcome.conn, Metrics: metrics}, outcome.err
 	case <-ctx.Done():
@@ -140,7 +188,7 @@ func (e *singBoxNodeProtocolEngine) dialCachedOutbound(entry *singBoxCachedOutbo
 			if outcome.conn != nil {
 				_ = outcome.conn.Close()
 			}
-			e.cache.release(entry)
+			cache.release(entry)
 		}()
 		return appproxy.DialResult{Metrics: metrics}, timeoutErr
 	}
@@ -150,18 +198,360 @@ func (e *singBoxNodeProtocolEngine) InvalidateFingerprint(fingerprint string) {
 	if e == nil || e.cache == nil {
 		return
 	}
+	temporaryCaches := e.activeTemporaryCaches()
 	e.cache.invalidateFingerprint(fingerprint)
+	for _, cache := range temporaryCaches {
+		cache.invalidateFingerprint(fingerprint)
+	}
+	e.log().Debug("outbound cache fingerprint invalidated",
+		append([]zap.Field{
+			zap.String("fingerprint", fingerprint),
+			zap.Int("affected_temporary_caches", len(temporaryCaches)),
+		}, serviceOutboundCacheStatsFields(e.ServiceOutboundCacheStats())...)...,
+	)
 }
 
 func (e *singBoxNodeProtocolEngine) Close() error {
+	if e == nil {
+		return nil
+	}
+	e.closeOnce.Do(func() {
+		var err error
+		serviceStats := e.cache.stats()
+		temporaryCaches := e.closeTemporaryRegistry()
+		var temporaryStats singBoxOutboundCacheStats
+		for _, cache := range temporaryCaches {
+			stats := cache.stats()
+			temporaryStats.single += stats.single
+			temporaryStats.chain += stats.chain
+			temporaryStats.building += stats.building
+			err = errors.Join(err, cache.closeAll())
+		}
+		if e.cache != nil {
+			err = errors.Join(err, e.cache.closeAll())
+		}
+		if e.builder != nil {
+			err = errors.Join(err, e.builder.Close())
+		}
+		e.closeErr = err
+		e.log().Debug("node protocol engine closing caches",
+			zap.Int("service_single", serviceStats.single),
+			zap.Int("service_chain", serviceStats.chain),
+			zap.Int("service_building", serviceStats.building),
+			zap.Int("closed_temporary_caches", len(temporaryCaches)),
+			zap.Int("temporary_single", temporaryStats.single),
+			zap.Int("temporary_chain", temporaryStats.chain),
+			zap.Int("temporary_building", temporaryStats.building),
+		)
+	})
+	return e.closeErr
+}
+
+func (e *singBoxNodeProtocolEngine) NewTemporaryNodeProtocolEngine() (appproxy.TemporaryNodeProtocolEngine, error) {
+	if e == nil {
+		return nil, errSingBoxOutboundCacheClosed
+	}
+	cache := newSingBoxTemporaryOutboundCache()
+	e.temporaryMu.Lock()
+	if e.closing {
+		e.temporaryMu.Unlock()
+		_ = cache.closeAll()
+		return nil, errSingBoxOutboundCacheClosed
+	}
+	if e.temporaryCaches == nil {
+		e.temporaryCaches = make(map[*singBoxOutboundCache]struct{})
+	}
+	e.temporaryCaches[cache] = struct{}{}
+	e.temporaryMu.Unlock()
+	e.log().Debug("temporary outbound cache registered",
+		serviceOutboundCacheStatsFields(e.ServiceOutboundCacheStats())...,
+	)
+	return &singBoxTemporaryNodeProtocolEngine{parent: e, cache: cache}, nil
+}
+
+func (e *singBoxNodeProtocolEngine) activeTemporaryCaches() []*singBoxOutboundCache {
+	e.temporaryMu.Lock()
+	defer e.temporaryMu.Unlock()
+	caches := make([]*singBoxOutboundCache, 0, len(e.temporaryCaches))
+	for cache := range e.temporaryCaches {
+		caches = append(caches, cache)
+	}
+	return caches
+}
+
+func (e *singBoxNodeProtocolEngine) closeTemporaryRegistry() []*singBoxOutboundCache {
+	e.temporaryMu.Lock()
+	defer e.temporaryMu.Unlock()
+	e.closing = true
+	caches := make([]*singBoxOutboundCache, 0, len(e.temporaryCaches))
+	for cache := range e.temporaryCaches {
+		caches = append(caches, cache)
+	}
+	e.temporaryCaches = nil
+	return caches
+}
+
+func (e *singBoxNodeProtocolEngine) unregisterTemporaryCache(cache *singBoxOutboundCache) int {
+	if e == nil || cache == nil {
+		return 0
+	}
+	e.temporaryMu.Lock()
+	defer e.temporaryMu.Unlock()
+	delete(e.temporaryCaches, cache)
+	return len(e.temporaryCaches)
+}
+
+type singBoxTemporaryNodeProtocolEngine struct {
+	parent    *singBoxNodeProtocolEngine
+	cache     *singBoxOutboundCache
+	closeErr  error
+	closeOnce sync.Once
+}
+
+func (e *singBoxTemporaryNodeProtocolEngine) DialNode(node appproxy.Node, target string, timeouts appproxy.DialTimeouts) (appproxy.DialResult, error) {
+	if e == nil || e.parent == nil {
+		return appproxy.DialResult{}, errSingBoxOutboundCacheClosed
+	}
+	return e.parent.dialNode(e.cache, node, target, timeouts)
+}
+
+func (e *singBoxTemporaryNodeProtocolEngine) DialChain(frontNode, exitNode appproxy.Node, target string, timeouts appproxy.DialTimeouts) (appproxy.DialResult, error) {
+	if e == nil || e.parent == nil {
+		return appproxy.DialResult{}, errSingBoxOutboundCacheClosed
+	}
+	return e.parent.dialChain(e.cache, frontNode, exitNode, target, timeouts)
+}
+
+func (e *singBoxTemporaryNodeProtocolEngine) Close() error {
+	if e == nil {
+		return nil
+	}
+	e.closeOnce.Do(func() {
+		stats := e.cache.stats()
+		if e.cache != nil {
+			e.closeErr = e.cache.closeAll()
+		}
+		activeTemporaryCaches := 0
+		if e.parent != nil {
+			activeTemporaryCaches = e.parent.unregisterTemporaryCache(e.cache)
+			e.parent.log().Debug("temporary outbound cache closed",
+				zap.Int("temporary_single", stats.single),
+				zap.Int("temporary_chain", stats.chain),
+				zap.Int("temporary_building", stats.building),
+				zap.Int("active_temporary_caches", activeTemporaryCaches),
+			)
+		}
+	})
+	return e.closeErr
+}
+
+func (e *singBoxNodeProtocolEngine) SetServiceOutboundSyncGeneration(generation uint64) {
+	if e == nil {
+		return
+	}
+	atomicMaxUint64(&e.latestServiceSyncGeneration, generation)
+}
+
+func (e *singBoxNodeProtocolEngine) SyncServiceOutboundCache(generation uint64, paths []appproxy.ServiceOutboundPath) error {
+	if e == nil || e.cache == nil {
+		return errSingBoxOutboundCacheClosed
+	}
+	if generation < e.latestServiceSyncGeneration.Load() {
+		e.log().Debug("service outbound cache sync skipped stale generation",
+			zap.Uint64("generation", generation),
+			zap.Uint64("latest_generation", e.latestServiceSyncGeneration.Load()),
+		)
+		return nil
+	}
+	e.SetServiceOutboundSyncGeneration(generation)
+	allowed, normalizeErr := serviceOutboundAllowedKeys(paths)
+	if generation < e.latestServiceSyncGeneration.Load() {
+		e.log().Debug("service outbound cache sync skipped stale generation",
+			zap.Uint64("generation", generation),
+			zap.Uint64("latest_generation", e.latestServiceSyncGeneration.Load()),
+		)
+		return nil
+	}
+	syncErr := e.cache.syncServiceAllowedKeys(allowed)
+	e.log().Debug("service outbound cache synced",
+		append([]zap.Field{
+			zap.Uint64("generation", generation),
+			zap.Int("allowed_single", len(allowed.single)),
+			zap.Int("allowed_chain", len(allowed.chain)),
+		}, serviceOutboundCacheStatsFields(e.ServiceOutboundCacheStats())...)...,
+	)
+	return errors.Join(normalizeErr, syncErr)
+}
+
+func (e *singBoxNodeProtocolEngine) WarmServiceOutboundPaths(paths []appproxy.ServiceOutboundPath) error {
+	if e == nil || e.cache == nil || len(paths) == 0 {
+		return nil
+	}
+	const warmConcurrency = 4
+	workers := warmConcurrency
+	if len(paths) < workers {
+		workers = len(paths)
+	}
+	jobs := make(chan appproxy.ServiceOutboundPath)
+	var wg sync.WaitGroup
+	var errMu sync.Mutex
+	var warmErr error
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range jobs {
+				if err := e.warmServiceOutboundPath(path); err != nil {
+					errMu.Lock()
+					warmErr = errors.Join(warmErr, err)
+					errMu.Unlock()
+				}
+			}
+		}()
+	}
+	for _, path := range paths {
+		jobs <- path
+	}
+	close(jobs)
+	wg.Wait()
+	e.log().Debug("service outbound cache warm completed",
+		append([]zap.Field{
+			zap.Int("requested_paths", len(paths)),
+		}, serviceOutboundCacheStatsFields(e.ServiceOutboundCacheStats())...)...,
+	)
+	return warmErr
+}
+
+func (e *singBoxNodeProtocolEngine) ServiceOutboundCacheStats() appproxy.ServiceOutboundCacheStats {
+	if e == nil {
+		return appproxy.ServiceOutboundCacheStats{}
+	}
+	serviceStats := e.cache.stats()
+	temporaryCaches := e.activeTemporaryCaches()
+	var temporaryStats singBoxOutboundCacheStats
+	for _, cache := range temporaryCaches {
+		stats := cache.stats()
+		temporaryStats.single += stats.single
+		temporaryStats.chain += stats.chain
+		temporaryStats.building += stats.building
+	}
+	return appproxy.ServiceOutboundCacheStats{
+		ServiceSingle:         serviceStats.single,
+		ServiceChain:          serviceStats.chain,
+		ServiceBuilding:       serviceStats.building,
+		ActiveTemporaryCaches: len(temporaryCaches),
+		TemporarySingle:       temporaryStats.single,
+		TemporaryChain:        temporaryStats.chain,
+		TemporaryBuilding:     temporaryStats.building,
+	}
+}
+
+func serviceOutboundCacheStatsFields(stats appproxy.ServiceOutboundCacheStats) []zap.Field {
+	return []zap.Field{
+		zap.Int("service_single", stats.ServiceSingle),
+		zap.Int("service_chain", stats.ServiceChain),
+		zap.Int("service_building", stats.ServiceBuilding),
+		zap.Int("active_temporary_caches", stats.ActiveTemporaryCaches),
+		zap.Int("temporary_single", stats.TemporarySingle),
+		zap.Int("temporary_chain", stats.TemporaryChain),
+		zap.Int("temporary_building", stats.TemporaryBuilding),
+	}
+}
+
+func (e *singBoxNodeProtocolEngine) ServiceOutboundCacheLimits() appproxy.ServiceOutboundCacheLimits {
+	return appproxy.ServiceOutboundCacheLimits{
+		Single: serviceSingleOutboundHardCap,
+		Chain:  serviceChainOutboundHardCap,
+	}
+}
+
+func (e *singBoxNodeProtocolEngine) warmServiceOutboundPath(path appproxy.ServiceOutboundPath) error {
+	var entry *singBoxCachedOutbound
 	var err error
-	if e.cache != nil {
-		err = errors.Join(err, e.cache.closeAll())
+	if path.IsChain() {
+		entry, _, err = e.acquireChainOutbound(e.cache, path.FrontNode, path.ExitNode)
+	} else {
+		entry, _, err = e.acquireSingleOutbound(e.cache, path.Node)
 	}
-	if e.builder != nil {
-		err = errors.Join(err, e.builder.Close())
+	if err != nil {
+		return err
 	}
-	return err
+	e.cache.release(entry)
+	return nil
+}
+
+func (e *singBoxNodeProtocolEngine) log() *zap.Logger {
+	if e == nil || e.logger == nil {
+		return zap.NewNop()
+	}
+	return e.logger
+}
+
+func serviceOutboundAllowedKeys(paths []appproxy.ServiceOutboundPath) (singBoxOutboundAllowedKeys, error) {
+	allowed := singBoxOutboundAllowedKeys{
+		single: make(map[string]struct{}),
+		chain:  make(map[string]struct{}),
+	}
+	var err error
+	for _, path := range paths {
+		key, keyErr := serviceOutboundCacheKey(path)
+		if keyErr != nil {
+			err = errors.Join(err, keyErr)
+			continue
+		}
+		switch key.namespace {
+		case singBoxOutboundCacheSingle:
+			allowed.single[key.key] = struct{}{}
+		case singBoxOutboundCacheChain:
+			allowed.chain[key.key] = struct{}{}
+		}
+	}
+	return allowed, err
+}
+
+type singBoxServiceOutboundCacheKey struct {
+	namespace singBoxOutboundCacheNamespace
+	key       string
+}
+
+func serviceOutboundCacheKey(path appproxy.ServiceOutboundPath) (singBoxServiceOutboundCacheKey, error) {
+	if path.IsChain() {
+		if path.FrontNode.ID == "" || path.ExitNode.ID == "" {
+			return singBoxServiceOutboundCacheKey{}, errors.New("chain service outbound path requires front and exit nodes")
+		}
+		_, frontFingerprint, err := runtimeOutboundJSONForNode(path.FrontNode)
+		if err != nil {
+			return singBoxServiceOutboundCacheKey{}, err
+		}
+		if appsubscriptions.NormalizeNodeType(path.ExitNode.Type) == "direct" {
+			return singBoxServiceOutboundCacheKey{namespace: singBoxOutboundCacheSingle, key: frontFingerprint}, nil
+		}
+		_, exitFingerprint, err := runtimeOutboundJSONForNode(path.ExitNode)
+		if err != nil {
+			return singBoxServiceOutboundCacheKey{}, err
+		}
+		return singBoxServiceOutboundCacheKey{namespace: singBoxOutboundCacheChain, key: frontFingerprint + "->" + exitFingerprint}, nil
+	}
+	if path.Node.ID == "" {
+		return singBoxServiceOutboundCacheKey{}, errors.New("single service outbound path requires node")
+	}
+	_, fingerprint, err := runtimeOutboundJSONForNode(path.Node)
+	if err != nil {
+		return singBoxServiceOutboundCacheKey{}, err
+	}
+	return singBoxServiceOutboundCacheKey{namespace: singBoxOutboundCacheSingle, key: fingerprint}, nil
+}
+
+func atomicMaxUint64(value *atomic.Uint64, next uint64) {
+	for {
+		current := value.Load()
+		if next <= current {
+			return
+		}
+		if value.CompareAndSwap(current, next) {
+			return
+		}
+	}
 }
 
 type singBoxOutboundBuilder struct {

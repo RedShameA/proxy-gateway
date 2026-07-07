@@ -70,7 +70,7 @@ func New(dataDir string, opts ...Option) (*Gateway, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	protocolEngine, err := singboxinfra.NewNodeProtocolEngine()
+	protocolEngine, err := singboxinfra.NewNodeProtocolEngine(logger.Named("singbox"))
 	if err != nil {
 		cancel()
 		_ = store.Close()

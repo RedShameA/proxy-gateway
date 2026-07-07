@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -111,6 +112,113 @@ func TestDialCachedOutboundHardTimeoutReturnsBeforeOutboundDial(t *testing.T) {
 	close(outbound.release)
 	waitForConnClosed(t, conn)
 	waitForCacheEntryRefs(t, cache, entry, 0)
+}
+
+func TestServiceOutboundCacheSyncIgnoresStaleGeneration(t *testing.T) {
+	t.Parallel()
+
+	cache := newSingBoxServiceOutboundCache()
+	var closes int32
+	entry := newSingBoxCachedOutbound("new-path", []string{"new-path"}, nil, func() error {
+		atomic.AddInt32(&closes, 1)
+		return nil
+	})
+	entry.namespace = singBoxOutboundCacheSingle
+	cache.single[entry.key] = entry
+	engine := &singBoxNodeProtocolEngine{cache: cache}
+
+	engine.SetServiceOutboundSyncGeneration(2)
+	if err := engine.SyncServiceOutboundCache(1, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cache.single["new-path"]; !ok {
+		t.Fatal("stale sync removed newer service cache entry")
+	}
+	if got := atomic.LoadInt32(&closes); got != 0 {
+		t.Fatalf("closes after stale sync = %d, want 0", got)
+	}
+
+	if err := engine.SyncServiceOutboundCache(2, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cache.single["new-path"]; ok {
+		t.Fatal("current sync kept disallowed service cache entry")
+	}
+	if got := atomic.LoadInt32(&closes); got != 1 {
+		t.Fatalf("closes after current sync = %d, want 1", got)
+	}
+}
+
+func TestServiceOutboundDirectExitMapsToFrontSingleKey(t *testing.T) {
+	t.Parallel()
+
+	front := appproxy.Node{ID: "front", OutboundJSON: `{"type":"direct"}`}
+	exit := appproxy.Node{ID: "exit", Type: "direct", OutboundJSON: `{"type":"direct"}`}
+	_, frontFingerprint, err := runtimeOutboundJSONForNode(front)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keys, err := serviceOutboundAllowedKeys([]appproxy.ServiceOutboundPath{
+		appproxy.ChainServiceOutboundPath(front, exit),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := keys.single[frontFingerprint]; !ok {
+		t.Fatalf("single keys = %#v, want front fingerprint %q", keys.single, frontFingerprint)
+	}
+	if len(keys.chain) != 0 {
+		t.Fatalf("chain keys = %#v, want no chain key for direct exit", keys.chain)
+	}
+}
+
+func TestSingBoxEngineInvalidatesTemporaryCaches(t *testing.T) {
+	t.Parallel()
+
+	engine := &singBoxNodeProtocolEngine{
+		cache:           newSingBoxServiceOutboundCache(),
+		temporaryCaches: make(map[*singBoxOutboundCache]struct{}),
+	}
+	tempEngine, err := engine.NewTemporaryNodeProtocolEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	temp := tempEngine.(*singBoxTemporaryNodeProtocolEngine)
+	var serviceCloses int32
+	var tempCloses int32
+	serviceEntry := newSingBoxCachedOutbound("fingerprint-1", []string{"fingerprint-1"}, nil, func() error {
+		atomic.AddInt32(&serviceCloses, 1)
+		return nil
+	})
+	serviceEntry.namespace = singBoxOutboundCacheSingle
+	tempEntry := newSingBoxCachedOutbound("fingerprint-1", []string{"fingerprint-1"}, nil, func() error {
+		atomic.AddInt32(&tempCloses, 1)
+		return nil
+	})
+	tempEntry.namespace = singBoxOutboundCacheSingle
+	engine.cache.single["fingerprint-1"] = serviceEntry
+	temp.cache.single["fingerprint-1"] = tempEntry
+
+	engine.InvalidateFingerprint("fingerprint-1")
+	if got := atomic.LoadInt32(&serviceCloses); got != 1 {
+		t.Fatalf("service closes = %d, want 1", got)
+	}
+	if got := atomic.LoadInt32(&tempCloses); got != 1 {
+		t.Fatalf("temporary closes = %d, want 1", got)
+	}
+	if err := tempEngine.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.NewTemporaryNodeProtocolEngine(); err != nil {
+		t.Fatalf("new temporary before service close = %v", err)
+	}
+	if err := engine.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.NewTemporaryNodeProtocolEngine(); !errors.Is(err, errSingBoxOutboundCacheClosed) {
+		t.Fatalf("new temporary after service close = %v, want cache closed", err)
+	}
 }
 
 type blockingOutbound struct {

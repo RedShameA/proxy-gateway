@@ -46,6 +46,7 @@ func (g *Gateway) createAccessProfile(req accessProfilePatchRequest) (applicatio
 	if result.EnqueueUnknownCountryObservation {
 		g.enqueueUnknownCountryObservations(cfg.CandidateFilter())
 	}
+	g.triggerServiceOutboundSync("profile_create")
 	return service.BuildSummary(context.Background(), cfg), nil
 }
 
@@ -143,6 +144,7 @@ func (g *Gateway) deleteAccessProfile(profileID string) (map[string]bool, error)
 		return nil, newProfileOperationError(profileErrorInternal, "delete access profile", err)
 	}
 	g.invalidateRuntimeFingerprints(result.DeletedFingerprints)
+	g.triggerServiceOutboundSync("profile_delete")
 	return map[string]bool{"deleted": true}, nil
 }
 
@@ -168,6 +170,7 @@ func (g *Gateway) patchAccessProfile(profileID string, req accessProfilePatchReq
 	if result.EnqueueUnknownCountryObservation {
 		g.enqueueUnknownCountryObservations(cfg.CandidateFilter())
 	}
+	g.triggerServiceOutboundSync("profile_update")
 	return map[string]bool{"updated": true}, nil
 }
 
@@ -281,9 +284,16 @@ func (g *Gateway) loadUsableNodeWithContext(ctx context.Context, nodeID string) 
 }
 
 func (g *Gateway) usableNodes(nodes []nodeRecord) []nodeRecord {
+	return g.usableNodesWithContext(context.Background(), nodes)
+}
+
+func (g *Gateway) usableNodesWithContext(ctx context.Context, nodes []nodeRecord) []nodeRecord {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	usable := make([]nodeRecord, 0, len(nodes))
 	for _, node := range nodes {
-		if node.Enabled && g.nodeUsable(node.ID) {
+		if node.Enabled && g.nodeUsableWithContext(ctx, node.ID) {
 			usable = append(usable, node)
 		}
 	}
@@ -291,12 +301,23 @@ func (g *Gateway) usableNodes(nodes []nodeRecord) []nodeRecord {
 }
 
 func (g *Gateway) nodeUsable(nodeID string) bool {
-	observation, found, err := g.nodeRepo.LoadObservation(context.Background(), nodeID)
+	return g.nodeUsableWithContext(context.Background(), nodeID)
+}
+
+func (g *Gateway) nodeUsableWithContext(ctx context.Context, nodeID string) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	observation, found, err := g.nodeRepo.LoadObservation(ctx, nodeID)
 	return err == nil && found && observation.Usable
 }
 
 func (g *Gateway) nodeIDMatchesCandidateFilter(nodeID string, filter candidateFilter) bool {
-	nodes, err := g.candidateNodes(filter)
+	return g.nodeIDMatchesCandidateFilterWithContext(context.Background(), nodeID, filter)
+}
+
+func (g *Gateway) nodeIDMatchesCandidateFilterWithContext(ctx context.Context, nodeID string, filter candidateFilter) bool {
+	nodes, err := g.candidateNodesWithContext(ctx, filter)
 	if err != nil {
 		return false
 	}
@@ -304,19 +325,27 @@ func (g *Gateway) nodeIDMatchesCandidateFilter(nodeID string, filter candidateFi
 }
 
 func (g *Gateway) profileNodeMatchesCandidateFilter(profileID, nodeID string, filter candidateFilter) bool {
-	return g.nodeIDMatchesCandidateFilter(nodeID, filter) || g.profileRetainsNode(profileID, nodeID)
+	return g.profileNodeMatchesCandidateFilterWithContext(context.Background(), profileID, nodeID, filter)
+}
+
+func (g *Gateway) profileNodeMatchesCandidateFilterWithContext(ctx context.Context, profileID, nodeID string, filter candidateFilter) bool {
+	return g.nodeIDMatchesCandidateFilterWithContext(ctx, nodeID, filter) || g.profileRetainsNodeWithContext(ctx, profileID, nodeID)
 }
 
 func (g *Gateway) chainPathMatchesProfile(cfg accessProfileConfig, frontNodeID, exitNodeID string) bool {
+	return g.chainPathMatchesProfileWithContext(context.Background(), cfg, frontNodeID, exitNodeID)
+}
+
+func (g *Gateway) chainPathMatchesProfileWithContext(ctx context.Context, cfg accessProfileConfig, frontNodeID, exitNodeID string) bool {
 	if !stringInSlice(exitNodeID, cfg.ExitNodeIDs) {
 		return false
 	}
-	nodes, err := g.candidateNodes(cfg.CandidateFilter())
+	nodes, err := g.candidateNodesWithContext(ctx, cfg.CandidateFilter())
 	if err != nil {
-		return g.profileRetainsNode(cfg.ID, frontNodeID)
+		return g.profileRetainsNodeWithContext(ctx, cfg.ID, frontNodeID)
 	}
 	nodes = excludeNodes(nodes, cfg.ExitNodeIDs)
-	return nodeIDInRecords(frontNodeID, nodes) || g.profileRetainsNode(cfg.ID, frontNodeID)
+	return nodeIDInRecords(frontNodeID, nodes) || g.profileRetainsNodeWithContext(ctx, cfg.ID, frontNodeID)
 }
 
 func (g *Gateway) unknownCountryCandidateCount(filter candidateFilter) int {
