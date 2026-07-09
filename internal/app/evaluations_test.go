@@ -501,9 +501,14 @@ func TestFastestProfileCountryFilterChangeDropsStaleCurrentPath(t *testing.T) {
 func TestFastestCountryProfileUsesDefaultTestURLWhenOmitted(t *testing.T) {
 	t.Parallel()
 
+	defaultTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("default profile test url"))
+	}))
+	t.Cleanup(defaultTarget.Close)
+
 	usProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "US")
 	jpProxy := newCountryHTTPConnectProxy(t, "egress.local:80", "JP")
-	gw := apptest.NewGateway(t)
+	gw := apptest.NewGateway(t, app.WithDefaultProfileTestURL(defaultTarget.URL))
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
 	adminToken := setupAdmin(t, srv.URL)

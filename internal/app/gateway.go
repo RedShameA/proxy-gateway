@@ -24,6 +24,7 @@ type options struct {
 	logger                   *zap.Logger
 	disableMaintenanceRunner bool
 	storageConfig            *storageinfra.Config
+	defaultProfileTestURL    string
 }
 
 func WithLogger(logger *zap.Logger) Option {
@@ -41,6 +42,12 @@ func WithoutMaintenanceRunner() Option {
 func WithStorageConfig(config storageinfra.Config) Option {
 	return func(options *options) {
 		options.storageConfig = &config
+	}
+}
+
+func WithDefaultProfileTestURL(testURL string) Option {
+	return func(options *options) {
+		options.defaultProfileTestURL = testURL
 	}
 }
 
@@ -78,15 +85,19 @@ func New(dataDir string, opts ...Option) (*Gateway, error) {
 		return nil, err
 	}
 	g := &Gateway{
-		store:               store,
-		txRunners:           storageinfra.NewTxRunners(store),
-		dataDir:             dataDir,
-		protocolEngine:      protocolEngine,
-		adminLogins:         appadmin.NewLoginLimiter(),
-		ctx:                 ctx,
-		cancel:              cancel,
-		logger:              logger.Named("gateway"),
-		subscriptionFetcher: subscriptionfetch.Fetch,
+		store:                 store,
+		txRunners:             storageinfra.NewTxRunners(store),
+		dataDir:               dataDir,
+		protocolEngine:        protocolEngine,
+		adminLogins:           appadmin.NewLoginLimiter(),
+		ctx:                   ctx,
+		cancel:                cancel,
+		logger:                logger.Named("gateway"),
+		subscriptionFetcher:   subscriptionfetch.Fetch,
+		defaultProfileTestURL: config.defaultProfileTestURL,
+	}
+	if g.defaultProfileTestURL == "" {
+		g.defaultProfileTestURL = defaultProfileTestURL
 	}
 	if err := g.migrate(); err != nil {
 		_ = protocolEngine.Close()

@@ -66,7 +66,7 @@ func (g *Gateway) profileEvaluationTarget(profileID string, forceSwitch bool) (p
 func (g *Gateway) profileEvaluationTargetFromRecord(record appevaluations.TargetRecord, settings evaluationSettings, forceSwitch bool, now int64) (profileEvaluationTarget, bool) {
 	return appevaluations.BuildTarget(appevaluations.TargetBuildInput{
 		Record:                              record,
-		DefaultTestURL:                      defaultProfileTestURL,
+		DefaultTestURL:                      g.defaultProfileTestURL,
 		DefaultMinEvaluationIntervalSeconds: settings.DefaultMinEvaluationIntervalSeconds,
 		NowMS:                               now,
 		ForceSwitch:                         forceSwitch,

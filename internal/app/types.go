@@ -57,6 +57,7 @@ type Gateway struct {
 	serviceOutboundSyncOnce       sync.Once
 	serviceOutboundSyncGeneration atomic.Uint64
 	serviceOutboundSyncCh         chan struct{}
+	defaultProfileTestURL         string
 	logger                        *zap.Logger
 }
 

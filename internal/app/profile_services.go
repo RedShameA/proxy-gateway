@@ -33,7 +33,7 @@ func (g *Gateway) profileConfigService() applicationprofiles.ConfigService {
 
 func (g *Gateway) accessProfileConfigValidationDeps() applicationprofiles.ConfigValidationDeps {
 	return applicationprofiles.ConfigValidationDeps{
-		DefaultTestURL: defaultProfileTestURL,
+		DefaultTestURL: g.defaultProfileTestURL,
 		IdentifierExists: func(identifier, excludeProfileID string) (bool, error) {
 			return g.profileConfigRepo.ProfileIdentifierExists(context.Background(), identifier, excludeProfileID)
 		},
