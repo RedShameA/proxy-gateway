@@ -114,6 +114,53 @@ func TestDialCachedOutboundHardTimeoutReturnsBeforeOutboundDial(t *testing.T) {
 	waitForCacheEntryRefs(t, cache, entry, 0)
 }
 
+func TestDialCachedOutboundReleasesTemporaryEntryWhenReturnedConnCloses(t *testing.T) {
+	cache := newSingBoxTemporaryOutboundCache()
+	conn := newCloseRecordingConn()
+	var closes int32
+	outbound := &blockingOutbound{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		conn:    conn,
+	}
+	close(outbound.release)
+	entry := newSingBoxCachedOutbound("hy2", []string{"hy2"}, outbound, func() error {
+		atomic.AddInt32(&closes, 1)
+		return nil
+	})
+	entry.namespace = singBoxOutboundCacheSingle
+	entry.refs = 1
+	cache.single[entry.key] = entry
+
+	result, err := dialCachedOutbound(cache, entry, M.Socksaddr{}, appproxy.DialTimeouts{}, appproxy.DialMetrics{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Conn == nil {
+		t.Fatal("dial conn = nil, want returned connection")
+	}
+	if got := cacheEntryRefs(cache, entry); got != 1 {
+		t.Fatalf("entry refs after successful dial = %d, want still held by returned connection", got)
+	}
+	if got := atomic.LoadInt32(&closes); got != 0 {
+		t.Fatalf("outbound closes before returned conn close = %d, want 0", got)
+	}
+
+	if err := result.Conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	waitForConnClosed(t, conn)
+	if got := cacheEntryRefs(cache, entry); got != 0 {
+		t.Fatalf("entry refs after returned conn close = %d, want 0", got)
+	}
+	if got := atomic.LoadInt32(&closes); got != 1 {
+		t.Fatalf("outbound closes after returned conn close = %d, want 1", got)
+	}
+	if _, ok := cache.single[entry.key]; ok {
+		t.Fatal("temporary entry remained cached after returned conn close")
+	}
+}
+
 func TestServiceOutboundCacheSyncIgnoresStaleGeneration(t *testing.T) {
 	t.Parallel()
 

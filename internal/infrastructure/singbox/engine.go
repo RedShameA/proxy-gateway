@@ -156,6 +156,22 @@ type singBoxOutboundDialOutcome struct {
 	elapsedMS int64
 }
 
+type cacheReleaseConn struct {
+	net.Conn
+	releaseOnce sync.Once
+	release     func()
+}
+
+func (c *cacheReleaseConn) Close() error {
+	err := c.Conn.Close()
+	c.releaseOnce.Do(func() {
+		if c.release != nil {
+			c.release()
+		}
+	})
+	return err
+}
+
 func (e *singBoxNodeProtocolEngine) dialCachedOutbound(entry *singBoxCachedOutbound, targetAddr M.Socksaddr, timeouts appproxy.DialTimeouts, metrics appproxy.DialMetrics) (appproxy.DialResult, error) {
 	return dialCachedOutbound(e.cache, entry, targetAddr, timeouts, metrics)
 }
@@ -176,9 +192,18 @@ func dialCachedOutbound(cache *singBoxOutboundCache, entry *singBoxCachedOutboun
 	select {
 	case outcome := <-done:
 		cancel()
-		cache.release(entry)
 		metrics.OutboundDialMS = outcome.elapsedMS
-		return appproxy.DialResult{Conn: outcome.conn, Metrics: metrics}, outcome.err
+		if outcome.err != nil || outcome.conn == nil {
+			cache.release(entry)
+			return appproxy.DialResult{Conn: outcome.conn, Metrics: metrics}, outcome.err
+		}
+		conn := &cacheReleaseConn{
+			Conn: outcome.conn,
+			release: func() {
+				cache.release(entry)
+			},
+		}
+		return appproxy.DialResult{Conn: conn, Metrics: metrics}, nil
 	case <-ctx.Done():
 		timeoutErr := fmt.Errorf("sing-box outbound dial timeout: %w", ctx.Err())
 		cancel()
